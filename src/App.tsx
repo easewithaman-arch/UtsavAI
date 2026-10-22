@@ -13,6 +13,7 @@ import { TimelineView } from './views/TimelineView';
 import { VendorsView } from './views/VendorsView';
 import { IdeasView } from './views/IdeasView';
 import { CopilotView, type CopilotMode } from './views/CopilotView';
+import { AboutView } from './views/AboutView';
 import { Segmented } from './ui/atoms';
 import { Logo, LogoMark, LogoWordmark } from './ui/Logo';
 import { formatDate, money, titleCase } from './ui/format';
@@ -30,6 +31,7 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [history, setHistory] = useState<ChangeRecord[]>([]);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [view, setView] = useState<'app' | 'about'>('app');
 
   useEffect(() => {
     let alive = true;
@@ -115,6 +117,7 @@ export default function App() {
     }
     domain.importPlan(plan);
     setTab('plan');
+    setView('app');
   };
 
   const meta = useMemo(() => (current ? EVENT_TYPE_MAP[current.input.type] : null), [current]);
@@ -131,7 +134,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="brand" onClick={() => setShowLibrary(false)}>
+        <div className="brand" onClick={() => { setShowLibrary(false); setView('app'); }}>
           <LogoMark className="brand-mark" size={38} />
           <div className="brand-text">
             <LogoWordmark className="brand-wordmark" height={30} />
@@ -139,6 +142,7 @@ export default function App() {
           </div>
         </div>
         <div className="header-right">
+          <button type="button" className="ghost" onClick={() => { setView('about'); setShowLibrary(false); }}>About</button>
           <span className={`mode-badge ${mode.mode}`} title={mode.model ?? undefined}>
             {mode.mode === 'ai' ? 'AI mode' : 'Built-in mode'}
           </span>
@@ -164,6 +168,7 @@ export default function App() {
                       domain.selectPlan(p.id);
                       setShowLibrary(false);
                       setTab('plan');
+                      setView('app');
                     }}
                   >
                     <span className="library-name">{p.input.name || 'Untitled event'}</span>
@@ -216,7 +221,11 @@ export default function App() {
         </div>
       ) : null}
 
-      {!current ? (
+      {view === 'about' ? (
+        <main className="main">
+          <AboutView />
+        </main>
+      ) : !current ? (
         <main className="main">
           <Wizard onGenerate={generate} busy={busy} />
         </main>
@@ -226,8 +235,8 @@ export default function App() {
             <div className="plan-heading">
               <h2>{current.input.name || 'Untitled event'}</h2>
               <p className="plan-meta">
-                {meta?.label} · {formatDate(current.input.date)} · {current.input.guestCount} guests ·{" "}
-                {money(current.input.budget.totalMinor, current.input.budget.currency)} ·{" "}
+                {meta?.label} · {formatDate(current.input.date)} · {current.input.guestCount} guests ·{' '}
+                {money(current.input.budget.totalMinor, current.input.budget.currency)} ·{' '}
                 <span className={`tag ${current.source}`}>{current.source === 'ai' ? 'AI-assisted' : 'Built-in plan'}</span>
               </p>
             </div>
@@ -235,26 +244,16 @@ export default function App() {
               <button type="button" className="ghost" onClick={() => domain.savePlan(current)}>
                 Save
               </button>
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => exportPlanJson(current)}
-                title="Download a copy of the whole plan so you can keep it or move it to another device"
-              >
+              <button type="button" className="ghost" onClick={() => exportPlanJson(current)} title="Download a copy of the whole plan so you can keep it or move it to another device">
                 Download plan
               </button>
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => exportChecklistCsv(current, 'tasks')}
-                title="Download the task list as a spreadsheet you can open in Excel, Google Sheets or Numbers"
-              >
+              <button type="button" className="ghost" onClick={() => exportChecklistCsv(current, 'tasks')} title="Download the task list as a spreadsheet you can open in Excel, Google Sheets or Numbers">
                 Download task list
               </button>
               <button type="button" className="ghost" onClick={() => printPlan()}>
                 Print
               </button>
-              <button type="button" className="ghost" onClick={() => domain.removePlan(current.id)}>
+              <button type="button" className="ghost" onClick={() => { domain.removePlan(current.id); setView('app'); }}>
                 New plan
               </button>
             </div>
@@ -276,20 +275,21 @@ export default function App() {
 
           <div className="view-container">
             {tab === 'plan' ? <IdeasView plan={current} /> : null}
-            {tab === 'budget' ? (
-              <BudgetView plan={current} onAllocations={onAllocations} onActuals={onActuals} />
-            ) : null}
+            {tab === 'budget' ? <BudgetView plan={current} onAllocations={onAllocations} onActuals={onActuals} /> : null}
             {tab === 'timeline' ? <TimelineView plan={current} onTasks={onTasks} /> : null}
             {tab === 'vendors' ? <VendorsView plan={current} onVendors={onVendors} /> : null}
-            {tab === 'copilot' ? (
-              <CopilotView plan={current} mode={mode} history={history} onApply={applyOps} />
-            ) : null}
+            {tab === 'copilot' ? <CopilotView plan={current} mode={mode} history={history} onApply={applyOps} /> : null}
           </div>
         </main>
       )}
 
       <footer className="app-footer">
-        <span>UtsavAI · your plans stay on this device</span>
+        <div>
+          <span>UtsavAI · your plans stay on this device</span>
+        </div>
+        <button type="button" className="linklike" onClick={() => setView('about')}>
+          About
+        </button>
       </footer>
     </div>
   );
