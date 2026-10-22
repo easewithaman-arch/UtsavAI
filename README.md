@@ -165,3 +165,60 @@ intent parsing and storage round-tripping.
 Plan data stays on your device. In AI mode only the event brief and the copilot request
 are sent to your configured provider; the API key lives on the server and is never sent
 to the browser.
+## AI Prompting & Approach (For PromptWars)
+
+UtsavAI demonstrates careful prompt engineering to prevent LLM hallucinations and ensure reliable outputs.
+
+### How AI is Used
+
+**Plan Generation (\/api/plan\)**
+- AI generates a structured draft with suggestions for budget shares, tasks, vendors, ideas, and risks
+- The AI **never** does arithmetic - it only provides relative weights and rough estimates
+- All numbers are recomputed deterministically on the client using the largest-remainder method
+
+**Copilot Assistant (\/api/copilot\)**
+- Natural language requests are converted into a strict whitelist of validated operations
+- Operations are previewed to the user and only applied after explicit confirmation
+- Ambiguous or high-consequence requests trigger clarification questions
+
+### Prompting Strategy
+
+**System Prompt Design (Server-side, \server/ai.mjs\)**
+
+The PLAN_SYSTEM prompt enforces:
+1. **Role-based prompting** - Clear persona as UtsavAI event planning expert for Indian celebrations
+2. **Constraint enforcement** - Explicit rules about what AI can/cannot do (no arithmetic, no vendors, no dates)
+3. **Structured output** - Forces JSON with \esponse_format: { type: "json_object" }\, provides exact schema
+4. **Schema template** - Full JSON structure in prompt prevents malformed responses
+5. **Separation of concerns** - AI suggests "what", deterministic code computes "how much/how many"
+6. **Defensive prompting** - "Never invent vendors, prices from external sources, regulations or religious rules", "Acknowledge uncertainty"
+7. **Context awareness** - Accounts for budget size, guest count, type, location, setting
+
+**Copilot Prompting:**
+The COPILOT_SYSTEM converts requests to whitelisted operations only, requires clarification for ambiguous/high-risk requests, returns preview with summary and tradeoffs for transparency.
+
+**Key Techniques:**
+- **Role-based prompting** with domain expertise
+- **Constraint enforcement** preventing arithmetic/hallucination
+- **Structured output** with JSON schema enforcement
+- **Few-shot schema** via detailed JSON templates
+- **Separation of concerns** (AI suggests, code computes)
+- **Validation pipeline** (server + client validation, fallback to demo)
+- **Defensive prompting** against hallucinations
+- **Minimal context** (only necessary data sent)
+- **Low temperature** (0.4) for consistency
+- **Operation whitelisting** for copilot safety
+- **Preview-before-apply** UX pattern
+
+### AI Tools Used
+- OpenAI-compatible APIs (gpt-4o-mini by default, configurable via env vars)
+- Server-side only - API keys never exposed to browser
+- Works with any OpenAI-compatible provider (OpenRouter, Groq, etc.)
+
+### Safety & Reliability
+- **Deterministic budget engine** - Largest-remainder allocation ensures mathematical correctness
+- **Schema validation** - Every AI response validated against strict schema
+- **Fallback mechanism** - If AI output fails validation, app falls back to demo mode automatically
+- **Preview before apply** - All copilot changes shown to user for confirmation
+- **No code execution** - AI cannot generate or run code
+- **Local-first** - Plan data stays on device, only minimal context sent to AI
