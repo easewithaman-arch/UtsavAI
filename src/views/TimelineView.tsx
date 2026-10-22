@@ -13,6 +13,7 @@ import {
 import { EVENT_TYPE_MAP } from '../domain/events';
 import { EmptyState, Segmented } from '../ui/atoms';
 import { formatDate, titleCase } from '../ui/format';
+import { leadTimeLabel } from '../domain/labels';
 
 type Filter = 'all' | 'overdue' | 'soon' | 'done';
 
@@ -115,8 +116,8 @@ export function TimelineView({
           </div>
         ))}
         <p className="muted milestone-note">
-          {EVENT_TYPE_MAP[plan.input.type].label} on {formatDate(plan.input.date)} · deadlines are calculated from their
-          offset before the event, so moving the date re-drives them.
+          {EVENT_TYPE_MAP[plan.input.type].label} on {formatDate(plan.input.date)} · each deadline is worked out from how
+          long before the event it is, so changing the date shifts all of them.
         </p>
       </div>
 
@@ -176,7 +177,7 @@ export function TimelineView({
                         Due {formatDate(task.dueDate)}
                         {flags.overdue ? ' · overdue' : flags.dueSoon ? ' · due soon' : ''}
                       </span>
-                      <span className="muted">{task.leadDays >= 0 ? `T-${task.leadDays} days` : `T+${Math.abs(task.leadDays)} days`}</span>
+                      <span className="muted">{leadTimeLabel(task.leadDays)}</span>
                     </div>
                   </div>
                 )}

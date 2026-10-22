@@ -110,13 +110,29 @@ src/
   planner/       Deterministic demo planner, copilot operations, intent parser, AI client
   persistence/   Local-storage save/load with validation
   lib/           JSON/CSV/print export
-  ui/            Shared UI atoms, formatting helpers, storage hook, plan wizard
+  ui/            Shared UI atoms, logo components, formatting helpers, storage hook, plan wizard
   views/         Budget, timeline, vendors, ideas and copilot screens
   App.tsx        Application shell and state wiring
+public/          Static assets served as-is: favicon.svg, logo.svg
 server/          Zero-dependency Node HTTP server and AI provider bridge
 tests/           Vitest suite for the domain and planner
 scripts/dev.mjs  Dev runner that starts both servers
 ```
+
+## Brand assets
+
+The logo is inline SVG - no image files, no dependencies, no raster assets.
+
+- `src/ui/Logo.tsx` - `LogoMark` (the "U" symbol), `LogoWordmark` ("Utsav" in the
+  surrounding text colour, "AI" in the brand gradient) and `Logo` (both together).
+  Each one is usable on its own, keeps its aspect ratio at every size and gives
+  every instance its own gradient ids.
+- The gradient stops live in `src/styles.css` as custom properties
+  (`--logo-saffron`, `--logo-orange`, `--logo-coral`, `--logo-violet`), so the
+  `logo--dark` class and the `logo--auto` class (which follows
+  `prefers-color-scheme`) re-theme the mark without touching the markup.
+- `public/favicon.svg` - the symbol on its own, square and sharp down to 16px.
+- `public/logo.svg` - the full lockup, for sharing or print.
 
 ## What a plan contains
 

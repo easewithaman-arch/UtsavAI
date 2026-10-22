@@ -84,7 +84,7 @@ export function loadPlans(storage: StorageLike | null = defaultStorage()): LoadR
 }
 
 export function persistPlans(plans: EventPlan[], storage: StorageLike | null = defaultStorage()): { ok: boolean; error?: string } {
-  if (!storage) return { ok: false, error: 'Browser storage is unavailable - plans cannot be saved on this device.' };
+  if (!storage) return { ok: false, error: 'This browser is blocking saving, so plans cannot be stored on this device.' };
   try {
     const envelopes: StoredEnvelope[] = plans.slice(0, MAX_SAVED).map((plan) => ({
       version: 1,
@@ -98,8 +98,8 @@ export function persistPlans(plans: EventPlan[], storage: StorageLike | null = d
     return {
       ok: false,
       error: quota
-        ? 'Storage quota exceeded - delete an old plan or export it first.'
-        : 'Could not write to browser storage.',
+        ? 'This device is full of saved plans - delete an old one, or download it first.'
+        : 'We could not save your plans on this device.',
     };
   }
 }

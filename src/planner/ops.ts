@@ -26,6 +26,7 @@ import { isValidIsoDate, daysBetween, todayIso } from '../domain/validate';
 import { newId, REQUIREMENT_LABELS, CATEGORY_NAMES } from '../domain/events';
 import { buildVendorRequirements, estimateCategoryCosts } from './demo';
 import { formatMoney } from '../domain/money';
+import { fieldLabel, foodLabel, formatDate, priorityLabel, settingLabel, taskStatusLabel } from '../domain/labels';
 
 /**
  * The copilot speaks in validated, whitelisted operations.
@@ -71,7 +72,7 @@ function str(v: unknown, max: number): string | null {
 
 /** Validates a single operation from an untrusted source. Returns an error string or the normalized op. */
 export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
-  if (!raw || typeof raw !== 'object') return { error: 'Operation is not an object.' };
+  if (!raw || typeof raw !== 'object') return { error: 'That change could not be read.' };
   const o = raw as Record<string, unknown>;
   switch (o.op) {
     case 'setBudgetTotal': {
@@ -88,13 +89,13 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
     }
     case 'setEventDate': {
       const date = str(o.date, 10);
-      if (!date || !isValidIsoDate(date)) return { error: 'Event date must be YYYY-MM-DD.' };
+      if (!date || !isValidIsoDate(date)) return { error: 'That date could not be read.' };
       return { op: { op: 'setEventDate', date } };
     }
     case 'setEventField': {
       const field = o.field;
       if (field !== 'name' && field !== 'location' && field !== 'setting' && field !== 'durationHours') {
-        return { error: 'Unsupported event field.' };
+        return { error: 'That event detail cannot be changed here.' };
       }
       if (field === 'setting') {
         const value = str(o.value, 10);
@@ -106,13 +107,13 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
         return { op: { op: 'setEventField', field, value: Math.round(o.value) } };
       }
       const value = str(o.value, 120);
-      if (value === null || !value.trim()) return { error: `${field} must be non-empty text.` };
+      if (value === null || !value.trim()) return { error: `${fieldLabel(field)} cannot be blank.` };
       return { op: { op: 'setEventField', field, value: value.trim() } };
     }
     case 'setPreference': {
       const field = o.field;
       if (field !== 'theme' && field !== 'food' && field !== 'cultural' && field !== 'accessibility' && field !== 'special') {
-        return { error: 'Unsupported preference field.' };
+        return { error: 'That preference cannot be changed here.' };
       }
       if (field === 'food') {
         const value = str(o.value, 30);
@@ -131,7 +132,7 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
     }
     case 'setCategoryAllocation': {
       const id = o.categoryId as CategoryId;
-      if (!CATEGORY_IDS.has(id)) return { error: 'Unknown budget category.' };
+      if (!CATEGORY_IDS.has(id)) return { error: 'That is not a budget category.' };
       if (typeof o.allocatedMinor !== 'number' || !Number.isSafeInteger(o.allocatedMinor) || o.allocatedMinor < 0) {
         return { error: 'Allocation must be a non-negative amount.' };
       }
@@ -139,25 +140,25 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
     }
     case 'setCategoryPriority': {
       const id = o.categoryId as CategoryId;
-      if (!CATEGORY_IDS.has(id)) return { error: 'Unknown budget category.' };
+      if (!CATEGORY_IDS.has(id)) return { error: 'That is not a budget category.' };
       if (!PRIORITIES.has(o.priority as Priority)) return { error: 'Invalid priority.' };
       return { op: { op: 'setCategoryPriority', categoryId: id, priority: o.priority as Priority } };
     }
     case 'rebalanceBudget':
       return { op: { op: 'rebalanceBudget' } };
     case 'setRequirement': {
-      if (!REQUIREMENT_KEYS.has(o.key as RequirementKey)) return { error: 'Unknown planning requirement.' };
-      if (typeof o.enabled !== 'boolean') return { error: 'Requirement flag must be true or false.' };
+      if (!REQUIREMENT_KEYS.has(o.key as RequirementKey)) return { error: 'That is not one of the things to plan for.' };
+      if (typeof o.enabled !== 'boolean') return { error: 'That choice has to be yes or no.' };
       return { op: { op: 'setRequirement', key: o.key as RequirementKey, enabled: o.enabled } };
     }
     case 'addTask': {
       const t = o.task;
-      if (!t || typeof t !== 'object') return { error: 'Task payload missing.' };
+      if (!t || typeof t !== 'object') return { error: 'That task could not be read.' };
       const task = t as Record<string, unknown>;
       const title = str(task.title, 160);
       if (!title || !title.trim()) return { error: 'Task title is required.' };
       const dueDate = str(task.dueDate, 10);
-      if (!dueDate || !isValidIsoDate(dueDate)) return { error: 'Task due date must be YYYY-MM-DD.' };
+      if (!dueDate || !isValidIsoDate(dueDate)) return { error: 'That due date could not be read.' };
       if (task.priority !== 'high' && task.priority !== 'medium' && task.priority !== 'low') return { error: 'Task priority invalid.' };
       const leadDays = typeof task.leadDays === 'number' ? Math.round(task.leadDays) : 0;
       return {
@@ -182,8 +183,8 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
     }
     case 'updateTask': {
       const taskId = str(o.taskId, 80);
-      if (!taskId) return { error: 'Task id missing.' };
-      if (!o.patch || typeof o.patch !== 'object') return { error: 'Task patch missing.' };
+      if (!taskId) return { error: 'That task could not be found.' };
+      if (!o.patch || typeof o.patch !== 'object') return { error: 'That task change could not be read.' };
       const patch: Record<string, unknown> = {};
       const p = o.patch as Record<string, unknown>;
       if (p.title !== undefined) {
@@ -216,18 +217,18 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
     }
     case 'deleteTask': {
       const taskId = str(o.taskId, 80);
-      if (!taskId) return { error: 'Task id missing.' };
+      if (!taskId) return { error: 'That task could not be found.' };
       return { op: { op: 'deleteTask', taskId } };
     }
     case 'setTaskStatus': {
       const taskId = str(o.taskId, 80);
-      if (!taskId) return { error: 'Task id missing.' };
+      if (!taskId) return { error: 'That task could not be found.' };
       if (!TASK_STATUSES.has(o.status as PlanTask['status'])) return { error: 'Task status invalid.' };
       return { op: { op: 'setTaskStatus', taskId, status: o.status as PlanTask['status'] } };
     }
     case 'addVendor': {
       const v = o.vendor;
-      if (!v || typeof v !== 'object') return { error: 'Vendor payload missing.' };
+      if (!v || typeof v !== 'object') return { error: 'That vendor could not be read.' };
       const vendor = v as Record<string, unknown>;
       const name = str(vendor.name, 120);
       if (!name?.trim()) return { error: 'Vendor name is required.' };
@@ -253,23 +254,23 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
     }
     case 'updateVendor': {
       const vendorId = str(o.vendorId, 80);
-      if (!vendorId) return { error: 'Vendor id missing.' };
-      if (!o.patch || typeof o.patch !== 'object') return { error: 'Vendor patch missing.' };
+      if (!vendorId) return { error: 'That vendor could not be found.' };
+      if (!o.patch || typeof o.patch !== 'object') return { error: 'That vendor change could not be read.' };
       return { op: { op: 'updateVendor', vendorId, patch: o.patch as Record<string, unknown> } };
     }
     case 'deleteVendor': {
       const vendorId = str(o.vendorId, 80);
-      if (!vendorId) return { error: 'Vendor id missing.' };
+      if (!vendorId) return { error: 'That vendor could not be found.' };
       return { op: { op: 'deleteVendor', vendorId } };
     }
     default:
-      return { error: `Unsupported operation: ${String(o.op).slice(0, 40)}` };
+      return { error: 'That change is not something we can do.' };
   }
 }
 
 export function validateOps(raw: unknown): { ops: PlanOp[]; errors: string[] } {
-  if (!Array.isArray(raw)) return { ops: [], errors: ['Operations must be an array.'] };
-  if (raw.length > 40) return { ops: [], errors: ['Too many operations in one request.'] };
+  if (!Array.isArray(raw)) return { ops: [], errors: ['That change list could not be read.'] };
+  if (raw.length > 40) return { ops: [], errors: ['That is too many changes for one request.'] };
   const ops: PlanOp[] = [];
   const errors: string[] = [];
   for (const item of raw) {
@@ -380,7 +381,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
               stillNeeded -= cut.reduce((a, b) => a + b, 0);
             }
             warnings.push(
-              `At ${op.count} guests the guest-linked needs (mostly catering) exceed the spendable budget. Flexible categories were cut to zero and guest-linked categories were trimmed by ${need - donorSum} to stay inside your limit - the remaining shortfall is ${stillNeeded}. Reduce the guest count, raise the budget, or cut scope.`,
+              `At ${op.count} guests the costs that scale with the guest count (mostly catering) are more than the budget can cover. Flexible categories were cut to zero and guest-linked categories were trimmed by ${formatMoney(need - donorSum, current.input.budget.currency)} to stay inside your limit - the remaining shortfall is ${formatMoney(stillNeeded, current.input.budget.currency)}. Reduce the guest count, raise the budget, or cut scope.`,
             );
           }
         }
@@ -441,13 +442,13 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
             milestones: current.timeline.milestones.map((m) => ({ ...m, date: shiftIso(m.date, delta) })),
           },
         };
-        changes.push(`Event date moved from ${oldDate} to ${op.date}; ${result.updated.length} open task deadlines recalculated.`);
+        changes.push(`Event date moved from ${formatDate(oldDate)} to ${formatDate(op.date)}; ${result.updated.length} open task deadlines recalculated.`);
         if (result.skippedCompleted.length > 0) {
           warnings.push(`${result.skippedCompleted.length} completed task(s) kept their original dates.`);
         }
         if (result.conflicts.length > 0) {
           warnings.push(
-            `Dependency check: ${result.conflicts.map((c) => `"${c.title}"`).join(', ')} now falls before its prerequisite - review the order.`,
+            `Order check: ${result.conflicts.map((c) => `"${c.title}"`).join(', ')} now falls before the task it depends on - review the order.`,
           );
         }
         const daysOut = daysBetween(todayIso(), op.date);
@@ -457,7 +458,8 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
       case 'setEventField': {
         const { field, value } = op;
         current = { ...current, input: { ...current.input, [field]: value } };
-        changes.push(`${labelForField(field)} updated to "${String(value)}".`);
+        const shown = field === 'setting' ? settingLabel(String(value)) : String(value);
+        changes.push(`${fieldLabel(field)} updated to "${shown}".`);
         if (field === 'setting') {
           if (value === 'outdoor') warnings.push('Outdoor setting: keep the weather contingency from the risks section in play.');
           if (value === 'indoor') warnings.push('Indoor setting: the outdoor weather risk is reduced but venue layout may change.');
@@ -468,14 +470,14 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
       case 'setPreference': {
         const { field, value } = op;
         current = { ...current, input: { ...current.input, preferences: { ...current.input.preferences, [field]: value } } };
-        changes.push(`Preference "${labelForField(field)}" updated.`);
+        changes.push(`${fieldLabel(field)} preference updated.`);
         if (field === 'food') {
           const estimates = estimateCategoryCosts(current.input);
           current = {
             ...current,
             budget: { ...current.budget, categories: current.budget.categories.map((c) => (c.isContingency ? c : { ...c, estimatedMinor: estimates[c.id] ?? 0 })) },
           };
-          warnings.push(`Catering estimate recalculated for a ${value} menu - allocation left unchanged unless you rebalance.`);
+          warnings.push(`Catering estimate recalculated for a ${foodLabel(value)} menu - allocation left unchanged unless you rebalance.`);
           const hasDietTask = current.timeline.tasks.some((t) => /dietary|menu preference|food preference/i.test(t.title));
           if (!hasDietTask) {
             current = {
@@ -506,7 +508,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
       }
       case 'setCategoryAllocation': {
         if (op.categoryId === 'contingency') {
-          warnings.push('Contingency reserve is driven by the contingency percentage, not edited directly.');
+          warnings.push('The reserve is set by the reserve percentage, so it cannot be edited directly.');
           break;
         }
         const result = setAllocation(
@@ -514,13 +516,16 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
           current.input.budget.totalMinor,
           op.categoryId,
           op.allocatedMinor,
+          current.input.budget.currency,
         );
         if (result.error) {
           warnings.push(result.error);
           break;
         }
         current = { ...current, budget: { ...current.budget, categories: result.categories } };
-        changes.push(`${CATEGORY_NAMES[op.categoryId]} allocation set to ${op.allocatedMinor}.`);
+        changes.push(
+          `${CATEGORY_NAMES[op.categoryId]} budget set to ${formatMoney(op.allocatedMinor, current.input.budget.currency)}.`,
+        );
         refreshInsufficient(current);
         break;
       }
@@ -536,7 +541,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
             categories: current.budget.categories.map((c) => (c.id === op.categoryId ? { ...c, priority: op.priority, manual: false } : c)),
           },
         };
-        changes.push(`${CATEGORY_NAMES[op.categoryId]} priority set to ${op.priority}.`);
+        changes.push(`${CATEGORY_NAMES[op.categoryId]} priority set to ${priorityLabel(op.priority)}.`);
         break;
       }
       case 'rebalanceBudget': {
@@ -626,7 +631,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
         if (after.status === 'done' && task.status !== 'done') {
           changes.push(`Task marked done: "${task.title}".`);
         } else if (after.dueDate !== before) {
-          changes.push(`Task "${task.title}" moved from ${before} to ${after.dueDate}.`);
+          changes.push(`Task "${task.title}" moved from ${formatDate(before)} to ${formatDate(after.dueDate)}.`);
         } else {
           changes.push(`Task "${task.title}" updated.`);
         }
@@ -634,7 +639,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
         if (after.dueDate !== before && after.status !== 'done') {
           const dependents = nextTasks.filter((t) => t.dependsOn === op.taskId && t.status !== 'done' && t.dueDate < after.dueDate);
           if (dependents.length > 0) {
-            warnings.push(`Dependent task(s) affected: ${dependents.map((d) => `"${d.title}"`).join(', ')} - they now fall before this one.`);
+            warnings.push(`Other tasks affected: ${dependents.map((d) => `"${d.title}"`).join(', ')} - they now fall before this one.`);
           }
         }
         break;
@@ -650,7 +655,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
         const next = current.timeline.tasks.map((t) => (t.id === op.taskId ? { ...t, status: op.status } : t));
         current = { ...current, timeline: { ...current.timeline, tasks: next } };
         const t = next.find((x) => x.id === op.taskId);
-        if (t) changes.push(`"${t.title}" marked ${op.status}.`);
+        if (t) changes.push(`"${t.title}" marked ${taskStatusLabel(op.status).toLowerCase()}.`);
         break;
       }
       case 'addVendor': {
@@ -695,21 +700,6 @@ function shiftIso(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
-}
-
-function labelForField(field: string): string {
-  const map: Record<string, string> = {
-    name: 'Event name',
-    location: 'Location',
-    setting: 'Setting',
-    durationHours: 'Duration (hours)',
-    theme: 'Theme',
-    food: 'Food preference',
-    cultural: 'Cultural preference',
-    accessibility: 'Accessibility',
-    special: 'Special requests',
-  };
-  return map[field] ?? field;
 }
 
 function redistributeFreed(plan: EventPlan, freed: number): EventPlan {

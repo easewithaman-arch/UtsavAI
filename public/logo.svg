@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 222 64" width="222" height="64" role="img" aria-label="UtsavAI">
+  <title>UtsavAI</title>
+  <defs>
+    <linearGradient id="utsav-mark" x1="30" y1="6" x2="38" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f3a83c"/>
+      <stop offset="0.3" stop-color="#f2853f"/>
+      <stop offset="0.62" stop-color="#ec6552"/>
+      <stop offset="1" stop-color="#4e1b63"/>
+    </linearGradient>
+    <linearGradient id="utsav-spark" x1="8" y1="4" x2="8" y2="16" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffc24d"/>
+      <stop offset="1" stop-color="#f0862b"/>
+    </linearGradient>
+    <linearGradient id="utsav-ai" x1="180" y1="19" x2="216" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f3a83c"/>
+      <stop offset="0.3" stop-color="#f2853f"/>
+      <stop offset="0.62" stop-color="#ec6552"/>
+      <stop offset="1" stop-color="#4e1b63"/>
+    </linearGradient>
+  </defs>
+  <path d="M 16 18 L 16 37 C 16 48 22 58 33 58 C 44 58 50 48 50 37 C 50 25 53.5 17 60 12 C 49 20 45 28 42 37 C 42 44 38 50 33 50 C 28 50 24 44 24 37 L 24 18 Z" fill="url(#utsav-mark)"/>
+  <path d="M 8 4.5 C 8.5 8.2 9.8 9.5 13.5 10 C 9.8 10.5 8.5 11.8 8 15.5 C 7.5 11.8 6.2 10.5 2.5 10 C 6.2 9.5 7.5 8.2 8 4.5 Z" fill="url(#utsav-spark)"/>
+  <text x="76" y="44" textLength="100" lengthAdjust="spacing" font-family="'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, 'Times New Roman', serif" font-size="36" font-weight="700" fill="#2a2622">Utsav</text>
+  <text x="180" y="44" textLength="36" lengthAdjust="spacing" font-family="'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, 'Times New Roman', serif" font-size="36" font-weight="700" fill="url(#utsav-ai)">AI</text>
+</svg>

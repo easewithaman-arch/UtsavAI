@@ -4,7 +4,10 @@ import type { PlanOp, ApplyResult } from '../planner/ops';
 import { validateOp } from '../planner/ops';
 import { DEMO_MODE_NOTE, parseIntent } from '../planner/intent';
 import { requestAiCopilot } from '../planner/ai';
-import { formatDateTime } from '../ui/format';
+import { formatDate, formatDateTime } from '../domain/labels';
+import { CHANGE_SOURCE_LABELS, fieldLabel, foodLabel, plural, priorityLabel, settingLabel, taskStatusLabel } from '../domain/labels';
+import { CATEGORY_NAMES, REQUIREMENT_LABELS } from '../domain/events';
+import { formatMoney } from '../domain/money';
 import { EmptyState } from '../ui/atoms';
 
 export interface CopilotMode {
@@ -61,7 +64,7 @@ export function CopilotView({
       const result = await requestAiCopilot(plan, text);
       setBusy(false);
       if (!result.ok) {
-        setError(`${result.error.message} Falling back to the built-in rules.`);
+        setError(`${result.error.message} We used our built-in rules instead.`);
         const local = parseIntent(text, plan);
         setPending({ ...local, origin: 'demo' });
         return;
@@ -101,14 +104,14 @@ export function CopilotView({
     <div className="copilot-view">
       <section className="panel copilot-panel">
         <header className="copilot-head">
-          <h3>Planning copilot</h3>
-          <span className={`mode-badge ${mode.mode}`}>
-            {mode.mode === 'ai' ? `AI mode · ${mode.model ?? 'model'}` : 'Demo mode · built-in rules'}
+          <h3>Planning assistant</h3>
+          <span className={`mode-badge ${mode.mode}`} title={mode.model ?? undefined}>
+            {mode.mode === 'ai' ? 'AI mode' : 'Built-in mode'}
           </span>
         </header>
         <p className="muted">
-          Ask for changes in plain language. Nothing is applied until you confirm, and every reply returns exact numbers.
-          The copilot works in validated operations - model output is never executed as code.
+          Ask for changes in plain language. Nothing is applied until you confirm, and every reply comes with real
+          numbers. Only the changes shown below can be made, so you always stay in control.
         </p>
         {mode.mode === 'demo' ? <p className="mode-note">{DEMO_MODE_NOTE}</p> : null}
 
@@ -139,17 +142,17 @@ export function CopilotView({
         {pending ? (
           <div className="proposal">
             <div className="proposal-head">
-              <span className={`tag ${pending.origin}`}>{pending.origin === 'ai' ? 'AI proposal' : 'Built-in rules'}</span>
+              <span className={`tag ${pending.origin}`}>{pending.origin === 'ai' ? 'AI suggestion' : 'Built-in suggestion'}</span>
               <p className="proposal-summary">{pending.summary}</p>
             </div>
             {pending.clarify ? <p className="clarify">{pending.clarify}</p> : null}
             {pending.ops.length > 0 ? (
               <>
-                <span className="proposal-label">{pending.ops.length} change(s) ready to apply:</span>
+                <span className="proposal-label">{plural(pending.ops.length, 'change')} ready to apply:</span>
                 <ul className="op-list">
                   {pending.ops.map((op, i) => (
                     <li key={i}>
-                      <code>{describeOp(op)}</code>
+                      <code>{describeOp(op, plan)}</code>
                     </li>
                   ))}
                 </ul>
@@ -167,7 +170,7 @@ export function CopilotView({
                 Discard
               </button>
               <button type="button" className="primary" onClick={confirm} disabled={pending.ops.length === 0}>
-                Apply {pending.ops.length} change(s)
+                Apply {plural(pending.ops.length, 'change')}
               </button>
             </div>
           </div>
@@ -195,7 +198,7 @@ export function CopilotView({
       <section className="panel">
         <h3>Change history</h3>
         {history.length === 0 ? (
-          <EmptyState title="Nothing yet" body="Every confirmed copilot or manual change is recorded here." />
+          <EmptyState title="Nothing yet" body="Every change you make - by hand or with the assistant - will show up here." />
         ) : (
           <ul className="history-list">
             {[...history].reverse().map((rec) => (
@@ -204,7 +207,9 @@ export function CopilotView({
                   <span className="history-summary">{rec.summary}</span>
                   <span className="muted">{formatDateTime(rec.at)}</span>
                 </div>
-                <span className={`tag ${rec.source === 'user' ? '' : rec.source === 'copilot-ai' ? 'ai' : 'demo'}`}>{rec.source}</span>
+                <span className={`tag ${rec.source === 'user' ? '' : rec.source === 'copilot-ai' ? 'ai' : 'demo'}`}>
+                  {CHANGE_SOURCE_LABELS[rec.source]}
+                </span>
                 {rec.details.length > 0 ? (
                   <ul className="plain-list small">
                     {rec.details.map((d, i) => (
@@ -221,44 +226,51 @@ export function CopilotView({
   );
 }
 
-function describeOp(op: PlanOp): string {
+function describeOp(op: PlanOp, plan: EventPlan): string {
+  const currency = plan.input.budget.currency;
+  const taskName = (id: string) => plan.timeline.tasks.find((t) => t.id === id)?.title ?? 'task';
+  const vendorName = (id: string) => plan.vendors.find((v) => v.id === id)?.name ?? 'vendor';
   switch (op.op) {
     case 'setBudgetTotal':
-      return `Set total budget to ${(op.totalMinor / 100).toLocaleString()}`;
+      return `Set the total budget to ${formatMoney(op.totalMinor, currency)}`;
     case 'setGuestCount':
-      return `Set guest count to ${op.count}`;
+      return `Set the guest count to ${op.count}`;
     case 'setEventDate':
-      return `Move event to ${op.date}`;
-    case 'setEventField':
-      return `Set ${op.field} to "${op.value}"`;
-    case 'setPreference':
-      return `Set ${op.field} preference to "${op.value}"`;
+      return `Move the event to ${formatDate(op.date)}`;
+    case 'setEventField': {
+      const value = op.field === 'setting' ? settingLabel(String(op.value)) : String(op.value);
+      return `Set ${fieldLabel(op.field).toLowerCase()} to "${value}"`;
+    }
+    case 'setPreference': {
+      const value = op.field === 'food' ? foodLabel(op.value) : op.value;
+      return `Set ${fieldLabel(op.field).toLowerCase()} to "${value}"`;
+    }
     case 'setColors':
-      return `Set colours to ${op.value.join(', ')}`;
+      return `Set the colours to ${op.value.join(', ')}`;
     case 'setCategoryAllocation':
-      return `Allocate ${(op.allocatedMinor / 100).toLocaleString()} to ${op.categoryId}`;
+      return `Set the ${CATEGORY_NAMES[op.categoryId].toLowerCase()} budget to ${formatMoney(op.allocatedMinor, currency)}`;
     case 'setCategoryPriority':
-      return `Set ${op.categoryId} priority to ${op.priority}`;
+      return `Set ${CATEGORY_NAMES[op.categoryId].toLowerCase()} priority to ${priorityLabel(op.priority)}`;
     case 'rebalanceBudget':
-      return 'Rebalance budget across categories';
+      return 'Spread the budget across the categories again';
     case 'setRequirement':
-      return `${op.enabled ? 'Enable' : 'Disable'} ${op.key}`;
+      return `${op.enabled ? 'Include' : 'Remove'} ${REQUIREMENT_LABELS[op.key].toLowerCase()} in the plan`;
     case 'addTask':
-      return `Add task "${op.task.title}"`;
+      return `Add the task "${op.task.title}"`;
     case 'updateTask':
-      return `Update task ${op.taskId}`;
+      return `Update the task "${taskName(op.taskId)}"`;
     case 'deleteTask':
-      return `Delete task ${op.taskId}`;
+      return `Delete the task "${taskName(op.taskId)}"`;
     case 'setTaskStatus':
-      return `Set task ${op.taskId} to ${op.status}`;
+      return `Mark "${taskName(op.taskId)}" as ${taskStatusLabel(op.status).toLowerCase()}`;
     case 'addVendor':
-      return `Add vendor "${op.vendor.name}"`;
+      return `Add the vendor "${op.vendor.name}"`;
     case 'updateVendor':
-      return `Update vendor ${op.vendorId}`;
+      return `Update the vendor "${vendorName(op.vendorId)}"`;
     case 'deleteVendor':
-      return `Delete vendor ${op.vendorId}`;
+      return `Remove the vendor "${vendorName(op.vendorId)}"`;
     default:
-      return 'Unknown operation';
+      return 'Unknown change';
   }
 }
 

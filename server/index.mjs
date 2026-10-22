@@ -152,7 +152,7 @@ const server = http.createServer(async (req, res) => {
     const status = err && err.code === 'PAYLOAD_TOO_LARGE' ? 413 : err && err.code === 'BAD_JSON' ? 400 : 500;
     sendJson(res, status, {
       ok: false,
-      error: { code: err && err.code ? err.code : 'SERVER_ERROR', message: status === 500 ? 'Internal server error.' : err.message },
+      error: { code: err && err.code ? err.code : 'SERVER_ERROR', message: status === 500 ? 'Something went wrong on our side.' : err.message },
     });
   }
 });

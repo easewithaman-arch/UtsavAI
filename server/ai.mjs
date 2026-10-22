@@ -41,7 +41,7 @@ function fail(code, message, status = 400) {
 async function callLLM(system, user, { maxTokens = 4000 } = {}) {
   const { apiKey, baseUrl, model } = getProviderConfig();
   if (!apiKey) {
-    const err = new Error('No AI credentials configured.');
+    const err = new Error('The AI is not set up on this server.');
     err.code = 'NOT_CONFIGURED';
     throw err;
   }
@@ -66,11 +66,11 @@ async function callLLM(system, user, { maxTokens = 4000 } = {}) {
     });
   } catch (e) {
     if (e.name === 'AbortError') {
-      const err = new Error('The AI provider timed out after 90s.');
+      const err = new Error('The AI took too long to answer.');
       err.code = 'PROVIDER_TIMEOUT';
       throw err;
     }
-    const err = new Error('Could not reach the AI provider. Check AI_BASE_URL and your network.');
+    const err = new Error('We could not reach the AI. Please check your connection and try again.');
     err.code = 'PROVIDER_UNREACHABLE';
     throw err;
   } finally {
@@ -78,7 +78,7 @@ async function callLLM(system, user, { maxTokens = 4000 } = {}) {
   }
 
   if (!response.ok) {
-    const err = new Error(`AI provider returned ${response.status}.`);
+    const err = new Error(`The AI returned an error (${response.status}).`);
     err.code = response.status === 401 ? 'PROVIDER_AUTH' : response.status === 429 ? 'PROVIDER_RATE_LIMIT' : 'PROVIDER_ERROR';
     err.status = response.status;
     throw err;
@@ -88,13 +88,13 @@ async function callLLM(system, user, { maxTokens = 4000 } = {}) {
   try {
     data = await response.json();
   } catch {
-    const err = new Error('AI provider returned a non-JSON response.');
+    const err = new Error('The AI sent back a reply we could not read.');
     err.code = 'PROVIDER_BAD_RESPONSE';
     throw err;
   }
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content.trim()) {
-    const err = new Error('AI provider returned an empty message.');
+    const err = new Error('The AI sent back an empty reply.');
     err.code = 'PROVIDER_BAD_RESPONSE';
     throw err;
   }
@@ -299,14 +299,14 @@ JSON shape: {"ops":[...],"summary":"","tradeoffs":[],"clarify":null}`;
 export async function handlePlan(body) {
   const { configured } = getProviderConfig();
   if (!configured) {
-    return fail('NOT_CONFIGURED', 'No AI credentials configured. Use demo mode or set AI_API_KEY.', 503);
+    return fail('NOT_CONFIGURED', 'The AI is not set up on this server, so we used our built-in rules instead.', 503);
   }
   const input = body && body.input;
   if (!input || typeof input !== 'object') {
-    return fail('BAD_REQUEST', 'Missing "input".');
+    return fail('BAD_REQUEST', 'We did not receive the event details.');
   }
   if (!EVENT_TYPES.includes(input.type)) {
-    return fail('BAD_REQUEST', 'Unknown event type.');
+    return fail('BAD_REQUEST', 'We did not recognise that kind of event.');
   }
 
   const user = JSON.stringify({
@@ -334,10 +334,10 @@ export async function handlePlan(body) {
   try {
     const content = await callLLM(PLAN_SYSTEM, user);
     const parsed = extractJson(content);
-    if (!parsed) return fail('INVALID_AI_OUTPUT', 'The model response was not valid JSON. Retry or use demo mode.', 502);
+    if (!parsed) return fail('INVALID_AI_OUTPUT', 'The AI sent back something we could not read. Please try again.', 502);
     const validated = validatePlanDraft(parsed);
     if (!validated.ok) {
-      return fail('INVALID_AI_OUTPUT', `The model response failed validation: ${validated.errors.slice(0, 4).join('; ')}`, 502);
+      return fail('INVALID_AI_OUTPUT', 'The AI sent back a plan we could not use. Please try again.', 502);
     }
     return { ok: true, mode: 'ai', draft: validated.draft };
   } catch (err) {
@@ -355,12 +355,12 @@ const OP_WHITELIST = new Set([
 export async function handleCopilot(body) {
   const { configured } = getProviderConfig();
   if (!configured) {
-    return fail('NOT_CONFIGURED', 'No AI credentials configured. Use demo mode or set AI_API_KEY.', 503);
+    return fail('NOT_CONFIGURED', 'The AI is not set up on this server, so we used our built-in rules instead.', 503);
   }
   const { plan, request } = body || {};
-  if (!plan || typeof plan !== 'object') return fail('BAD_REQUEST', 'Missing "plan".');
+  if (!plan || typeof plan !== 'object') return fail('BAD_REQUEST', 'We did not receive the plan.');
   if (typeof request !== 'string' || !request.trim() || request.length > 2000) {
-    return fail('BAD_REQUEST', 'Request must be a non-empty string under 2000 characters.');
+    return fail('BAD_REQUEST', 'Please type what you would like to change.');
   }
 
   const snapshot = {
@@ -377,11 +377,11 @@ export async function handleCopilot(body) {
   try {
     const content = await callLLM(COPILOT_SYSTEM, `PLAN SNAPSHOT:\n${JSON.stringify(snapshot)}\n\nUSER REQUEST:\n${request.trim()}`);
     const parsed = extractJson(content);
-    if (!parsed) return fail('INVALID_AI_OUTPUT', 'The model response was not valid JSON. Retry or use demo mode.', 502);
+    if (!parsed) return fail('INVALID_AI_OUTPUT', 'The AI sent back something we could not read. Please try again.', 502);
     const ops = Array.isArray(parsed.ops) ? parsed.ops : null;
-    if (!ops || ops.length > 40) return fail('INVALID_AI_OUTPUT', 'Model returned an invalid ops list.', 502);
+    if (!ops || ops.length > 40) return fail('INVALID_AI_OUTPUT', 'The AI sent back a list of changes we could not read. Please try again.', 502);
     if (ops.some((o) => !o || typeof o !== 'object' || typeof o.op !== 'string' || !OP_WHITELIST.has(o.op))) {
-      return fail('INVALID_AI_OUTPUT', 'Model attempted an unsupported operation. Nothing was applied.', 502);
+      return fail('INVALID_AI_OUTPUT', 'The AI asked for a change we cannot make, so nothing was applied.', 502);
     }
     return {
       ok: true,
@@ -409,5 +409,5 @@ function mapProviderError(err) {
     PROVIDER_BAD_RESPONSE: 502,
   };
   const code = err && err.code ? err.code : 'PROVIDER_ERROR';
-  return fail(code, err && err.message ? err.message : 'AI provider failed.', statusByCode[code] || 502);
+  return fail(code, err && err.message ? err.message : 'The AI could not answer just now.', statusByCode[code] || 502);
 }

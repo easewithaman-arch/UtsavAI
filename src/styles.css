@@ -10,8 +10,9 @@
   --burgundy: #7a2338;
   --gold: #b3893f;
   --gold-soft: #d9bd82;
-  --ok: #3f7d5c;
-  --warn: #8a6a1f;
+  --gold-ink: #8a6420;
+  --ok: #35714f;
+  --warn: #79591a;
   --bad: #a3382f;
   --radius: 14px;
   --radius-sm: 9px;
@@ -98,6 +99,52 @@ code {
   color: var(--ink-soft);
 }
 
+.loading-logo {
+  margin-bottom: 14px;
+}
+
+/* Logo */
+.logo {
+  --logo-saffron: #f3a83c;
+  --logo-orange: #f2853f;
+  --logo-coral: #ec6552;
+  --logo-violet: #4e1b63;
+  --logo-spark-light: #ffc24d;
+  --logo-spark-deep: #f0862b;
+}
+
+.logo--dark {
+  --logo-saffron: #ffb84d;
+  --logo-orange: #f79a4c;
+  --logo-coral: #f47a66;
+  --logo-violet: #8e3fae;
+  --logo-spark-light: #ffd97a;
+  --logo-spark-deep: #f79a3c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .logo--auto {
+    --logo-saffron: #ffb84d;
+    --logo-orange: #f79a4c;
+    --logo-coral: #f47a66;
+    --logo-violet: #8e3fae;
+    --logo-spark-light: #ffd97a;
+    --logo-spark-deep: #f79a3c;
+  }
+}
+
+.logo-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo-mark,
+.logo-wordmark {
+  display: block;
+  flex: none;
+}
+
 /* Header */
 .app-header {
   display: flex;
@@ -118,19 +165,19 @@ code {
 }
 
 .brand-mark {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: linear-gradient(140deg, var(--plum), var(--burgundy) 60%, var(--gold));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+  width: 38px;
+  height: 38px;
 }
 
-.brand-name {
-  display: block;
-  font-family: var(--font);
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-wordmark {
+  height: 30px;
+  width: calc(30px * 150 / 52);
+  color: var(--ink);
 }
 
 .brand-sub {
@@ -215,8 +262,10 @@ button {
   background: none;
   border: none;
   color: var(--ink-soft);
-  font-size: 0.82rem;
-  padding: 4px 6px;
+  font-size: 0.88rem;
+  padding: 6px 8px;
+  min-height: 32px;
+  line-height: 1;
 }
 
 .icon-btn:hover {
@@ -295,6 +344,19 @@ button {
   cursor: pointer;
 }
 
+.library-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.library-actions .muted {
+  margin: 0;
+  font-size: 0.82rem;
+  max-width: 30ch;
+}
+
 /* Notice */
 .notice {
   display: flex;
@@ -327,7 +389,7 @@ button {
   letter-spacing: 0.14em;
   font-size: 0.72rem;
   font-weight: 700;
-  color: var(--gold);
+  color: var(--gold-ink);
   margin-bottom: 6px;
 }
 
@@ -1226,7 +1288,7 @@ textarea {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 700;
-  color: var(--gold);
+  color: var(--gold-ink);
 }
 
 .risk-desc {
@@ -1329,7 +1391,7 @@ textarea {
   content: '~';
   position: absolute;
   left: 0;
-  color: var(--gold);
+  color: var(--gold-ink);
 }
 
 .clarify {
@@ -1404,6 +1466,16 @@ textarea {
 
   h1 {
     font-size: 1.6rem;
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+  }
+
+  .brand-wordmark {
+    height: 26px;
+    width: calc(26px * 150 / 52);
   }
 
   .two-col,

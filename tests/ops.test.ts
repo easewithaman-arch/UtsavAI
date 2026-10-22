@@ -33,7 +33,7 @@ describe('validateOp', () => {
     const many = Array.from({ length: 60 }, () => ({ op: 'rebalanceBudget' }));
     const result = validateOps(many);
     expect(result.ops).toHaveLength(0);
-    expect(result.errors[0]).toMatch(/Too many/);
+    expect(result.errors[0]).toMatch(/too many changes/i);
   });
 
   it('collects per-op errors without applying partial junk', () => {

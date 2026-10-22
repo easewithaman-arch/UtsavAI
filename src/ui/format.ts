@@ -1,6 +1,8 @@
 import type { CurrencyCode } from '../domain/types';
 import { formatMoney } from '../domain/money';
 
+export { formatDate, formatDateTime } from '../domain/labels';
+
 export function money(minor: number, currency: CurrencyCode): string {
   return formatMoney(minor, currency);
 }
@@ -29,27 +31,4 @@ export function titleCase(value: string): string {
     .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(' ');
-}
-
-export function formatDate(iso: string): string {
-  const parsed = Date.parse(`${iso}T00:00:00Z`);
-  if (Number.isNaN(parsed)) return iso;
-  return new Date(parsed).toLocaleDateString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-}
-
-export function formatDateTime(iso: string): string {
-  const parsed = Date.parse(iso);
-  if (Number.isNaN(parsed)) return iso;
-  return new Date(parsed).toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }

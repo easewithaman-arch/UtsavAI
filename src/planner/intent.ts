@@ -2,6 +2,7 @@ import type { EventPlan } from '../domain/types';
 import type { PlanOp } from './ops';
 import { parseMoneyInput, formatMoney } from '../domain/money';
 import { ISO_DATE_RE, daysBetween, todayIso } from '../domain/validate';
+import { foodLabel, formatDate } from '../domain/labels';
 
 export interface IntentResult {
   ops: PlanOp[];
@@ -12,7 +13,7 @@ export interface IntentResult {
 }
 
 export const DEMO_MODE_NOTE =
-  'Demo mode: this reply was produced by built-in planning rules, not an AI provider.';
+  'You are in built-in mode: replies come from our own planning rules instead of the AI. Everything still works, it is just less flexible with unusual requests.';
 
 function normalizeDate(raw: string): string | null {
   const iso = raw.match(/\d{4}-\d{2}-\d{2}/);
@@ -118,8 +119,8 @@ export function parseIntent(request: string, plan: EventPlan): IntentResult {
   if (/(vegetarian|vegan|pure veg|no onion|jain)/.test(text) && !/non[- ]?veg/.test(text)) {
     const value = /vegan/.test(text) ? 'vegan' : 'vegetarian';
     ops.push({ op: 'setPreference', field: 'food', value });
-    summaries.push(`Food preference set to ${value}`);
-    tradeoffs.push('Catering estimates were recalculated; the allocation stays the same until you rebalance the budget.');
+      summaries.push(`Food preference set to ${foodLabel(value)}`);
+      tradeoffs.push('Catering estimates were recalculated; the allocation stays the same until you rebalance the budget.');
   } else if (/non[- ]?veg|chicken|meat/.test(text)) {
     ops.push({ op: 'setPreference', field: 'food', value: 'non-vegetarian' });
     summaries.push('Food preference set to non-vegetarian');
@@ -202,12 +203,12 @@ export function parseIntent(request: string, plan: EventPlan): IntentResult {
     if (dateStr) {
       const delta = daysBetween(todayIso(), dateStr);
       ops.push({ op: 'setEventDate', date: dateStr });
-      summaries.push(`Event date moved to ${dateStr}`);
-      tradeoffs.push('Open task deadlines were recalculated from their offset before the event; completed tasks keep their dates.');
+      summaries.push(`Event date moved to ${formatDate(dateStr)}`);
+      tradeoffs.push('Open task deadlines were recalculated from how long before the event they fall; completed tasks keep their dates.');
       if (delta < 0) tradeoffs.push('That date is in the past - tasks will appear overdue.');
       else if (delta < 30) tradeoffs.push('Less than 30 days: vendor availability becomes the main risk.');
     } else {
-      clarify = 'Which date should the event move to? Please give it as YYYY-MM-DD (for example 2027-02-14).';
+      clarify = 'Which date should the event move to? For example, 14 Feb 2027.';
     }
   }
 
@@ -233,7 +234,7 @@ export function parseIntent(request: string, plan: EventPlan): IntentResult {
         'I can record a vendor for you in the Vendors tab (name, quote, status) - what is the vendor name and category? I will not suggest specific vendors, since availability and contact details cannot be verified here.';
     } else {
       clarify =
-        'I did not find a structured change I can safely apply. I can handle requests like: "reduce the budget by 20%", "reduce the guest count to 80", "add vegetarian catering", "move the ceremony indoors", "create a rain contingency plan", "move the event to 2027-02-14" or "suggest lower-cost decoration options".';
+        'I did not find a change I can apply. I can handle requests like: "reduce the budget by 20%", "reduce the guest count to 80", "add vegetarian catering", "move the ceremony indoors", "create a rain contingency plan", "move the event to 14 Feb 2027" or "suggest lower-cost decoration options".';
     }
   }
 

@@ -88,8 +88,8 @@ export function VendorsView({
           What to source · {requirementProgress}/{plan.vendorRequirements.length} booked
         </h3>
         <p className="muted">
-          These requirements come from your plan. The guide figure is a planning estimate derived from the allocated budget,
-          not a quotation, and no specific vendors are invented.
+          These are the things your plan says you will need. The guide figure is a planning estimate based on the budget you
+          set aside, not a quotation, and we do not invent specific vendors.
         </p>
         <div className="requirement-cards">
           {plan.vendorRequirements.map((r) => (

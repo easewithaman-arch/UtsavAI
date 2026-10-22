@@ -14,7 +14,9 @@ import { VendorsView } from './views/VendorsView';
 import { IdeasView } from './views/IdeasView';
 import { CopilotView, type CopilotMode } from './views/CopilotView';
 import { Segmented } from './ui/atoms';
+import { Logo, LogoMark, LogoWordmark } from './ui/Logo';
 import { formatDate, money, titleCase } from './ui/format';
+import { PLAN_SOURCE_LABELS } from './domain/labels';
 import { EVENT_TYPE_MAP } from './domain/events';
 
 type Tab = 'plan' | 'budget' | 'timeline' | 'vendors' | 'copilot';
@@ -51,14 +53,14 @@ export default function App() {
         try {
           const merged = buildPlanFromDraft(input, result.draft);
           plan = validatePlanShape(merged).ok ? merged : generateDemoPlan(input);
-          if (plan !== merged) setNotice('The AI draft did not pass validation, so a built-in plan was used instead.');
+          if (plan !== merged) setNotice('The AI could not finish the plan, so we used our built-in template instead.');
         } catch {
           plan = generateDemoPlan(input);
-          setNotice('The AI draft could not be assembled, so a built-in plan was used instead.');
+          setNotice('The AI could not finish the plan, so we used our built-in template instead.');
         }
       } else {
         plan = generateDemoPlan(input);
-        setNotice(`${result.error.message} A built-in plan was used instead.`);
+        setNotice(`${result.error.message} We used our built-in template instead.`);
       }
     } else {
       plan = generateDemoPlan(input);
@@ -78,7 +80,7 @@ export default function App() {
     const saved = domain.savePlan({ ...result.plan, id });
     setHistory((prev) => [
       ...prev,
-      makeChangeRecord(result.changes.join('; ') || 'Copilot change', result.warnings, mode.mode === 'ai' ? 'copilot-ai' : 'copilot-demo'),
+      makeChangeRecord(result.changes.join('; ') || 'Assistant change', result.warnings, mode.mode === 'ai' ? 'copilot-ai' : 'copilot-demo'),
     ]);
     return { ...result, plan: saved };
   };
@@ -108,7 +110,7 @@ export default function App() {
     const text = await file.text();
     const plan = restorePlan(text);
     if (!plan) {
-      setNotice('That file could not be read as a UtsavAI plan.');
+      setNotice('We could not open that file. Make sure it is a plan file you downloaded from UtsavAI.');
       return;
     }
     domain.importPlan(plan);
@@ -120,6 +122,7 @@ export default function App() {
   if (!domain.snapshot.loaded) {
     return (
       <div className="app loading">
+        <Logo className="loading-logo" height={44} />
         <p>Loading UtsavAI...</p>
       </div>
     );
@@ -129,15 +132,15 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <div className="brand" onClick={() => setShowLibrary(false)}>
-          <span className="brand-mark" aria-hidden="true" />
-          <div>
-            <span className="brand-name">UtsavAI</span>
+          <LogoMark className="brand-mark" size={38} />
+          <div className="brand-text">
+            <LogoWordmark className="brand-wordmark" height={30} />
             <span className="brand-sub">Celebration &amp; event planner</span>
           </div>
         </div>
         <div className="header-right">
-          <span className={`mode-badge ${mode.mode}`}>
-            {mode.mode === 'ai' ? `AI mode${mode.model ? ` · ${mode.model}` : ''}` : 'Demo mode'}
+          <span className={`mode-badge ${mode.mode}`} title={mode.model ?? undefined}>
+            {mode.mode === 'ai' ? 'AI mode' : 'Built-in mode'}
           </span>
           <button type="button" className="ghost" onClick={() => setShowLibrary((v) => !v)}>
             My plans ({domain.snapshot.plans.length})
@@ -165,7 +168,7 @@ export default function App() {
                   >
                     <span className="library-name">{p.input.name || 'Untitled event'}</span>
                     <span className="muted">
-                      {titleCase(p.input.type)} · {formatDate(p.input.date)} · {p.source}
+                      {titleCase(p.input.type)} · {formatDate(p.input.date)} · {PLAN_SOURCE_LABELS[p.source]}
                     </span>
                   </button>
                   <button
@@ -182,7 +185,7 @@ export default function App() {
           )}
           <div className="library-actions">
             <label className="ghost file-label">
-              Import JSON
+              Upload a plan file
               <input
                 type="file"
                 accept="application/json,.json"
@@ -193,6 +196,7 @@ export default function App() {
                 }}
               />
             </label>
+            <p className="muted">Bring back a plan you downloaded earlier, or move one from another device.</p>
           </div>
         </aside>
       ) : null}
@@ -208,7 +212,7 @@ export default function App() {
 
       {domain.snapshot.skipped > 0 ? (
         <div className="notice warn">
-          {domain.snapshot.skipped} saved plan(s) could not be validated and were skipped.
+          {domain.snapshot.skipped} saved plan(s) could not be opened and were skipped.
         </div>
       ) : null}
 
@@ -231,11 +235,21 @@ export default function App() {
               <button type="button" className="ghost" onClick={() => domain.savePlan(current)}>
                 Save
               </button>
-              <button type="button" className="ghost" onClick={() => exportPlanJson(current)}>
-                Export JSON
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => exportPlanJson(current)}
+                title="Download a copy of the whole plan so you can keep it or move it to another device"
+              >
+                Download plan
               </button>
-              <button type="button" className="ghost" onClick={() => exportChecklistCsv(current, 'tasks')}>
-                Tasks CSV
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => exportChecklistCsv(current, 'tasks')}
+                title="Download the task list as a spreadsheet you can open in Excel, Google Sheets or Numbers"
+              >
+                Download task list
               </button>
               <button type="button" className="ghost" onClick={() => printPlan()}>
                 Print
@@ -253,7 +267,7 @@ export default function App() {
                 { value: 'budget', label: 'Budget' },
                 { value: 'timeline', label: 'Timeline' },
                 { value: 'vendors', label: 'Vendors' },
-                { value: 'copilot', label: 'Copilot' },
+                { value: 'copilot', label: 'Assistant' },
               ]}
               value={tab}
               onChange={setTab}
@@ -275,7 +289,7 @@ export default function App() {
       )}
 
       <footer className="app-footer">
-        <span>UtsavAI · budgets in exact minor units · plan data stays on this device</span>
+        <span>UtsavAI · your plans stay on this device</span>
       </footer>
     </div>
   );

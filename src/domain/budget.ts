@@ -1,6 +1,6 @@
-import type { BudgetCategory, CategoryId, Priority } from './types';
+import type { BudgetCategory, CategoryId, CurrencyCode, Priority } from './types';
 import { CATEGORY_NAMES } from './events';
-import { clampMinor, percentOf } from './money';
+import { clampMinor, formatMoney, percentOf } from './money';
 
 const PRIORITY_WEIGHT: Record<Priority, number> = { high: 3, medium: 2, low: 1 };
 
@@ -130,6 +130,7 @@ export function setAllocation(
   totalMinor: number,
   categoryId: CategoryId,
   valueMinor: number,
+  currency?: CurrencyCode,
 ): { categories: BudgetCategory[]; error?: string } {
   const target = categories.find((c) => c.id === categoryId);
   if (!target) return { categories, error: 'Unknown budget category.' };
@@ -139,7 +140,9 @@ export function setAllocation(
   if (valueMinor > max) {
     return {
       categories,
-      error: `Only ${max} of budget remains for this category once other categories are counted.`,
+      error: currency
+        ? `Only ${formatMoney(max, currency)} is left for this category after setting amounts for the others.`
+        : `Only ${max} is left for this category after setting amounts for the others.`,
     };
   }
   return {
@@ -243,7 +246,7 @@ export function proposeBudgetChange(
       toFree -= take;
       notes.push(
         prio === 'low'
-          ? `Lower-priority categories absorb the first ₹-proportional cut (${pctOfBudget(take, newTotalMinor)}% of the new budget).`
+          ? `Lower-priority categories absorb the first cut (${pctOfBudget(take, newTotalMinor)}% of the new budget).`
           : prio === 'medium'
             ? `Medium-priority categories are reduced next to protect the essentials.`
             : `Even high-priority categories must shrink to fit the new budget.`,
@@ -262,10 +265,10 @@ export function proposeBudgetChange(
     }
     nextAllocations = remaining;
     notes.unshift(
-      `Budget cut of ${Math.round(((oldTotalMinor - newTotalMinor) / oldTotalMinor) * 100)}%. Contingency reserve recalculated to ${formatPctOfTotal(newContingency, newTotalMinor)}.`,
+      `Budget cut of ${Math.round(((oldTotalMinor - newTotalMinor) / oldTotalMinor) * 100)}%. The reserve was recalculated to ${formatPctOfTotal(newContingency, newTotalMinor)} of the budget.`,
     );
     if (newContingency < oldContingency) {
-      notes.push('Contingency reserve was reduced along with the budget - keep a buffer if you can.');
+      notes.push('The reserve was reduced along with the budget - keep a buffer if you can.');
     }
   }
 
@@ -336,17 +339,19 @@ export function applyBudgetChange(
 export function budgetWarnings(
   categories: BudgetCategory[],
   totalMinor: number,
+  currency?: CurrencyCode,
 ): string[] {
   const t = budgetTotals(categories, totalMinor);
+  const amount = (minor: number) => (currency ? formatMoney(minor, currency) : String(minor));
   const out: string[] = [];
   if (t.overSpent) {
-    out.push(`Actual spending exceeds the total budget by ${t.actualMinor - totalMinor} minor units.`);
+    out.push(`Actual spending exceeds the total budget by ${amount(t.actualMinor - totalMinor)}.`);
   }
   if (t.overAllocated) {
     out.push('Allocations exceed the total budget - reduce one or more categories.');
   }
   if (t.unallocatedMinor > 0 && !t.overAllocated) {
-    out.push(`${t.unallocatedMinor} minor units of budget are not yet allocated.`);
+    out.push(`${amount(t.unallocatedMinor)} of your budget has not been given to a category yet.`);
   }
   for (const c of categories) {
     if (c.isContingency) continue;

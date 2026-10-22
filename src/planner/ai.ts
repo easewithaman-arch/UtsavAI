@@ -83,24 +83,24 @@ async function postJson<T>(path: string, body: unknown, timeoutMs = 100_000): Pr
     try {
       data = await response.json();
     } catch {
-      return { code: 'BAD_RESPONSE', message: 'The server returned an unreadable response.' };
+      return { code: 'BAD_RESPONSE', message: 'We could not read the reply from the server.' };
     }
     const obj = data as Record<string, unknown>;
     if (!response.ok || obj?.ok === false) {
       const err = (obj?.error ?? {}) as { code?: string; message?: string };
       return {
         code: err.code || `HTTP_${response.status}`,
-        message: err.message || `Request failed with status ${response.status}.`,
+        message: err.message || `The server had a problem (error ${response.status}).`,
       };
     }
     return data as T;
   } catch (e) {
     if ((e as Error).name === 'AbortError') {
-      return { code: 'TIMEOUT', message: 'The request timed out. Retry, or continue in demo mode.' };
+      return { code: 'TIMEOUT', message: 'That took too long. Try again, or keep using the built-in rules.' };
     }
     return {
       code: 'SERVER_UNREACHABLE',
-      message: 'Could not reach the UtsavAI server. Start it with "npm run dev" (or "npm start" after building).',
+      message: 'We could not reach the UtsavAI server. Make sure it is running, then try again.',
     };
   } finally {
     clearTimeout(timer);
@@ -127,7 +127,7 @@ export async function requestAiPlan(
   const result = await postJson<{ ok: true; draft: AiPlanDraft }>('/api/plan', { input });
   if ('error' in result && !('ok' in result)) return { ok: false, error: result as AiError };
   if (!(result as { ok?: boolean }).ok) {
-    return { ok: false, error: { code: 'UNKNOWN', message: 'Plan request failed.' } };
+    return { ok: false, error: { code: 'UNKNOWN', message: 'We could not build the plan just now. Please try again.' } };
   }
   return { ok: true, draft: (result as { draft: AiPlanDraft }).draft };
 }
@@ -139,7 +139,7 @@ export async function requestAiCopilot(
   const result = await postJson<{ ok: true; proposal: AiCopilotProposal }>('/api/copilot', { plan, request });
   if ('error' in result && !('ok' in result)) return { ok: false, error: result as AiError };
   if (!(result as { ok?: boolean }).ok) {
-    return { ok: false, error: { code: 'UNKNOWN', message: 'Copilot request failed.' } };
+    return { ok: false, error: { code: 'UNKNOWN', message: 'We could not answer that just now. Please try again.' } };
   }
   return { ok: true, proposal: (result as { proposal: AiCopilotProposal }).proposal };
 }

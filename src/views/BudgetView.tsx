@@ -24,8 +24,8 @@ export function BudgetView({
     [plan.budget.categories, plan.input.budget.totalMinor],
   );
   const warnings = useMemo(
-    () => budgetWarnings(plan.budget.categories, plan.input.budget.totalMinor),
-    [plan.budget.categories, plan.input.budget.totalMinor],
+    () => budgetWarnings(plan.budget.categories, plan.input.budget.totalMinor, currency),
+    [plan.budget.categories, plan.input.budget.totalMinor, currency],
   );
 
   const maxAlloc = Math.max(...plan.budget.categories.map((c) => Math.max(c.allocatedMinor, c.estimatedMinor)), 1);
@@ -48,7 +48,7 @@ export function BudgetView({
     const sum = next.reduce((s, c) => s + c.allocatedMinor, 0);
     if (sum > plan.input.budget.totalMinor) {
       setError(
-        `That pushes allocations to ${money(sum, currency)} - ${money(sum - plan.input.budget.totalMinor, currency)} over the total. Reduce another category first or raise the budget via the copilot.`,
+        `That pushes the total to ${money(sum, currency)} - ${money(sum - plan.input.budget.totalMinor, currency)} over budget. Reduce another category first, or ask the assistant to raise the budget.`,
       );
       return;
     }
@@ -83,14 +83,14 @@ export function BudgetView({
 
       {totals.overAllocated ? (
         <p className="banner bad">
-          Allocations exceed the total budget by {money(totals.allocatedMinor - plan.input.budget.totalMinor, currency)}. The
-          engine keeps the sum exact; a manual edit has pushed it over.
+          The amounts assigned to categories add up to {money(totals.allocatedMinor - plan.input.budget.totalMinor, currency)}{' '}
+          more than your total budget. A manual edit has pushed it over.
         </p>
       ) : null}
       {plan.budget.insufficient || totals.estimatedOverBudget ? (
         <p className="banner warn">
-          Estimated costs exceed the budget. Categories below show where the gap is - cut scope, raise the budget, or reduce
-          the guest count through the copilot.
+          Estimated costs exceed the budget. The categories below show where the gap is - cut scope, raise the budget, or
+          reduce the guest count with the assistant.
         </p>
       ) : null}
       {error ? <p className="field-error">{error}</p> : null}
@@ -176,9 +176,9 @@ export function BudgetView({
 
       <Field label="How to read these numbers">
         <p className="muted">
-          Allocated is what the plan reserves; estimated need is a planning figure built from your guests, location and
-          preferences; actual is what you have really spent. Money is stored in exact minor units so the sum always matches
-          the total.
+          Allocated is what the plan sets aside; estimated need is a planning figure worked out from your guests, location
+          and preferences; actual is what you have really spent. Every amount is shown to the paisa, so the categories
+          always add up to your total exactly.
         </p>
       </Field>
     </div>

@@ -132,7 +132,7 @@ describe('corrupted or hostile storage data', () => {
     };
     const result = persistPlans([generateDemoPlan(wedding)], storage);
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/quota/i);
+    expect(result.error).toMatch(/full of saved plans/i);
   });
 });
 

@@ -44,7 +44,7 @@ export const CATEGORY_NAMES: Record<CategoryId, string> = {
   transportation: 'Transportation',
   accommodation: 'Accommodation',
   misc: 'Miscellaneous',
-  contingency: 'Contingency reserve',
+  contingency: 'Reserve',
 };
 
 export const REQUIREMENT_LABELS: Record<RequirementKey, string> = {

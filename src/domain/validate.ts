@@ -40,7 +40,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 export function validateEventInput(raw: unknown): ValidationResult<EventInput> {
   const errors: Record<string, string> = {};
   const obj = asRecord(raw);
-  if (!obj) return { ok: false, errors: { form: 'Event data is missing or malformed.' } };
+  if (!obj) return { ok: false, errors: { form: 'Some of the event details are missing. Please check the form and try again.' } };
 
   const name = typeof obj.name === 'string' ? obj.name.trim() : '';
   if (!name) errors.name = 'Event name is required.';
@@ -50,7 +50,7 @@ export function validateEventInput(raw: unknown): ValidationResult<EventInput> {
   if (!EVENT_TYPE_IDS.has(type)) errors.type = 'Choose a valid event type.';
 
   const date = obj.date;
-  if (!isValidIsoDate(date)) errors.date = 'Enter a valid date (YYYY-MM-DD).';
+  if (!isValidIsoDate(date)) errors.date = 'Enter a valid date.';
 
   const location = typeof obj.location === 'string' ? obj.location.trim() : '';
   if (!location) errors.location = 'Location is required.';
@@ -91,7 +91,7 @@ export function validateEventInput(raw: unknown): ValidationResult<EventInput> {
     }
     const pct = budgetRaw.contingencyPct;
     if (typeof pct !== 'number' || !Number.isFinite(pct) || pct < 0 || pct > 30) {
-      errors['budget.contingencyPct'] = 'Contingency reserve must be between 0% and 30%.';
+      errors['budget.contingencyPct'] = 'The reserve must be between 0% and 30%.';
     }
   }
 

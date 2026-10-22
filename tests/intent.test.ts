@@ -123,7 +123,8 @@ describe('parseIntent: safety', () => {
     expect(result.clarify).toMatch(/vendor name/i);
   });
 
-  it('exposes a demo-mode note for honest labelling', () => {
-    expect(DEMO_MODE_NOTE).toMatch(/not an AI provider/);
+  it('exposes a built-in mode note for honest labelling', () => {
+    expect(DEMO_MODE_NOTE).toMatch(/built-in mode/i);
+    expect(DEMO_MODE_NOTE).toMatch(/instead of the AI/i);
   });
 });

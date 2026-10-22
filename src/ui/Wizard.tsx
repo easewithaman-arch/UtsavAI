@@ -68,7 +68,7 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
         <p className="eyebrow">Plan a celebration</p>
         <h1>Everything a real event needs, decided honestly.</h1>
         <p className="lede">
-          Budget, timeline, vendor checklist and an adaptive copilot that returns actual numbers. Start from a worked
+          Budget, timeline, vendor checklist and a planning assistant that gives you real numbers. Start from a worked
           example or build your own event from scratch.
         </p>
       </div>
@@ -116,7 +116,7 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
             <Field label="Date">
               <input type="date" value={input.date} onChange={(e) => update({ date: e.target.value })} />
             </Field>
-            <Field label="Location / city" hint="Drives a rough cost index (metro areas cost more).">
+            <Field label="Location / city" hint="Bigger cities usually cost more.">
               <input
                 value={input.location}
                 placeholder="e.g. Pune"
@@ -166,7 +166,7 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
                   ))}
                 </select>
               </Field>
-              <Field label="Total budget" hint="Whole units - no need for decimals.">
+              <Field label="Total budget" hint="Round numbers are fine - no decimals needed.">
                 <input
                   value={imperialBudget}
                   inputMode="numeric"
@@ -178,7 +178,7 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
                   }}
                 />
               </Field>
-              <Field label="Contingency %" hint="A reserve kept aside for surprises.">
+              <Field label="Reserve %" hint="Money kept aside for surprises.">
                 <input
                   type="number"
                   min={0}
