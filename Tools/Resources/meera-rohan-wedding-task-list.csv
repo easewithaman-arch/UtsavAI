@@ -1,0 +1,18 @@
+Task,Category,Due date,Priority,Status,Overdue,Days before the event,Estimated cost,Notes
+Plan pre-wedding functions,planning,2027-01-05,high,todo,no,45,,"Schedule haldi, mehndi, sangeet or equivalent functions and their vendors."
+Finalise outfits and trial,logistics,2027-01-20,medium,todo,no,30,"₹15,000.00","Order or tailor outfits for the couple and key family, with trials."
+Confirm priest/officiant and rituals,planning,2027-01-20,high,todo,no,30,,"Confirm the ceremony requirements, timings and any religious officiant."
+Block guest accommodation,logistics,2027-01-29,medium,todo,no,21,"₹15,000.00",Reserve room blocks for outstation guests and confirm check-in support.
+Wedding registry / return gifts,guests,2027-02-05,low,todo,no,14,"₹9,000.00",Decide on return gifts or a registry and procure them.
+Finalise budget and guest list,finance,2026-10-22,high,todo,no,120,,"Confirm the total spend, the guest count and who is paying for what."
+Shortlist and book venue,venue,2026-11-21,high,todo,no,90,"₹1,20,000.00","Visit shortlisted venues, confirm availability for the event date and lock the booking with an advance."
+Select caterer and lock menu,catering,2026-12-21,high,todo,no,60,"₹1,50,000.00","Compare caterer quotes, run a tasting, and confirm menu against food preferences and dietary needs."
+Send invitations,invitations,2027-01-20,medium,todo,no,30,"₹9,000.00","Finalise the guest list, design invitations and send them out."
+Confirm decoration plan,decoration,2027-01-29,medium,todo,no,21,"₹45,000.00","Approve the decoration theme, colour palette and layout with the decorator."
+Confirm photography/videography,photography,2027-01-29,medium,todo,no,21,"₹60,000.00","Agree shot list, coverage hours and deliverables with the photographer."
+Confirm entertainment and run-of-show,entertainment,2027-02-05,medium,todo,no,14,"₹45,000.00","Lock music, hosts, performances and the sequence of the programme."
+Transport and logistics,logistics,2027-02-09,medium,todo,no,10,"₹15,000.00","Plan guest transport, vendor arrivals, parking and on-site signage."
+Settle outstanding vendor payments,finance,2027-02-14,high,todo,no,5,,Clear pending balances and confirm final headcount with paid vendors.
+Final walkthrough,planning,2027-02-17,high,todo,no,2,,Walk through the schedule with family/organisers and confirm arrival times.
+Event day coordination,planning,2027-02-19,high,todo,no,0,,"On-site point person manages vendors, timeline and guest flow."
+Thank-you notes and settle final dues,planning,2027-02-24,low,todo,no,-5,,"Thank guests and vendors, collect photos/videos and close payments."
