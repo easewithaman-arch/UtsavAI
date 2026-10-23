@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import http, { type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer, safeFilePath, SECURITY_HEADERS } from '../server/index.mjs';
@@ -10,6 +11,7 @@ interface TestResponse {
   status: number;
   headers: IncomingHttpHeaders;
   body: string;
+  bodyBinary: Buffer;
 }
 
 const servers: Server[] = [];
@@ -21,6 +23,7 @@ afterEach(async () => {
       (server) =>
         new Promise<void>((resolve) => {
           server.close(() => resolve());
+          server.closeAllConnections();
         }),
     ),
   );
@@ -53,6 +56,7 @@ function request(
             status: res.statusCode ?? 0,
             headers: res.headers,
             body: Buffer.concat(chunks).toString('utf8'),
+            bodyBinary: Buffer.concat(chunks),
           }),
         );
       },
@@ -69,6 +73,8 @@ function makeDist(): string {
   mkdirSync(path.join(dir, 'assets'));
   writeFileSync(path.join(dir, 'index.html'), '<!doctype html><title>UtsavAI test</title>');
   writeFileSync(path.join(dir, 'assets', 'app.js'), 'console.log("test");');
+  writeFileSync(path.join(dir, 'assets', 'big.js'), `console.log("${'repeated '.repeat(200)}");`);
+  writeFileSync(path.join(dir, 'robots.txt'), 'User-agent: *\nAllow: /\n');
   return dir;
 }
 
@@ -102,6 +108,8 @@ describe('HTTP server', () => {
     expect(header(res.headers, 'content-security-policy')).toContain("default-src 'self'");
     expect(header(res.headers, 'x-content-type-options')).toBe('nosniff');
     expect(header(res.headers, 'x-frame-options')).toBe('DENY');
+    expect(header(res.headers, 'cross-origin-resource-policy')).toBe('same-origin');
+    expect(header(res.headers, 'strict-transport-security')).toContain('max-age=31536000');
     expect(header(res.headers, 'cache-control')).toBe('no-store');
     expect(SECURITY_HEADERS['referrer-policy']).toBe('no-referrer');
   });
@@ -134,6 +142,54 @@ describe('HTTP server', () => {
 
     expect(res.status).toBe(403);
     expect(res.body).toContain('FORBIDDEN');
+  });
+
+  it('compresses large static assets and varies on Accept-Encoding', async () => {
+    const distDir = makeDist();
+    const port = await listen({ distDir });
+    const res = await request(port, '/assets/big.js', { headers: { 'accept-encoding': 'gzip' } });
+
+    expect(res.status).toBe(200);
+    expect(header(res.headers, 'content-encoding')).toBe('gzip');
+    expect(header(res.headers, 'vary')).toContain('Accept-Encoding');
+    expect(gunzipSync(res.bodyBinary).toString('utf8')).toContain('repeated');
+
+    const plain = await request(port, '/assets/big.js', { headers: { 'accept-encoding': 'identity' } });
+    expect(header(plain.headers, 'content-encoding')).toBe('');
+    expect(plain.body).toContain('repeated');
+  });
+
+  it('supports conditional requests with ETag and correct cache lifetimes', async () => {
+    const distDir = makeDist();
+    const port = await listen({ distDir });
+    const first = await request(port, '/assets/app.js');
+    const etag = header(first.headers, 'etag');
+    expect(etag).toMatch(/^W\/"/);
+
+    const cached = await request(port, '/assets/app.js', { headers: { 'if-none-match': etag } });
+    expect(cached.status).toBe(304);
+    expect(cached.body).toBe('');
+
+    const publicFile = await request(port, '/robots.txt');
+    expect(header(publicFile.headers, 'cache-control')).toBe('public, max-age=3600');
+  });
+
+  it('returns 404 for missing files instead of the SPA shell', async () => {
+    const distDir = makeDist();
+    const port = await listen({ distDir });
+    const missing = await request(port, '/assets/missing.js');
+    const favicon = await request(port, '/favicon.ico');
+
+    expect(missing.status).toBe(404);
+    expect(favicon.status).toBe(404);
+  });
+
+  it('rejects oversized request targets', async () => {
+    const port = await listen();
+    const res = await request(port, `/${'a'.repeat(2200)}`);
+
+    expect(res.status).toBe(414);
+    expect(JSON.parse(res.body).error.code).toBe('URI_TOO_LONG');
   });
 
   it('supports HEAD without sending a body', async () => {

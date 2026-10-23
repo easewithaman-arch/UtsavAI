@@ -25,11 +25,18 @@ export function BudgetView({
     [plan.budget.categories, plan.input.budget.totalMinor],
   );
   const warnings = useMemo(
-    () => budgetWarnings(plan.budget.categories, plan.input.budget.totalMinor, currency),
-    [plan.budget.categories, plan.input.budget.totalMinor, currency],
+    () => budgetWarnings(plan.budget.categories, plan.input.budget.totalMinor, currency, totals),
+    [plan.budget.categories, plan.input.budget.totalMinor, currency, totals],
   );
 
-  const maxAlloc = Math.max(...plan.budget.categories.map((c) => Math.max(c.allocatedMinor, c.estimatedMinor)), 1);
+  const maxAlloc = useMemo(
+    () => Math.max(...plan.budget.categories.map((c) => Math.max(c.allocatedMinor, c.estimatedMinor)), 1),
+    [plan.budget.categories],
+  );
+  const perGuest = useMemo(
+    () => costPerGuest(plan.input.budget.totalMinor, plan.input.guestCount),
+    [plan.input.budget.totalMinor, plan.input.guestCount],
+  );
 
   const startEdit = (id: string, valueMinor: number) => {
     setEditId(id);
@@ -82,7 +89,7 @@ export function BudgetView({
           value={money(totals.unallocatedMinor, currency)}
           tone={totals.unallocatedMinor < 0 ? 'bad' : 'ok'}
         />
-        <Stat label="Per guest" value={money(costPerGuest(plan.input.budget.totalMinor, plan.input.guestCount), currency)} />
+        <Stat label="Per guest" value={money(perGuest, currency)} />
       </div>
 
       {totals.overAllocated ? (

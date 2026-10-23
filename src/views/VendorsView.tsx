@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { EventPlan, Vendor, VendorCategory } from '../domain/types';
 import { newId } from '../domain/events';
 import { parseMoneyInput } from '../domain/money';
-import { formatDate, money, titleCase } from '../ui/format';
+import { money, titleCase } from '../ui/format';
 import { EmptyState, Field } from '../ui/atoms';
 
 const VENDOR_CATEGORIES: VendorCategory[] = [
@@ -30,9 +30,11 @@ const PAYMENTS: Vendor['paymentStatus'][] = ['none', 'advance-paid', 'partial', 
 export function VendorsView({
   plan,
   onVendors,
+  onRequirements,
 }: {
   plan: EventPlan;
   onVendors: (vendors: Vendor[]) => void;
+  onRequirements: (requirements: EventPlan['vendorRequirements']) => void;
 }) {
   const currency = plan.input.budget.currency;
   const [form, setForm] = useState({
@@ -45,12 +47,6 @@ export function VendorsView({
     notes: '',
     followUpDate: '',
   });
-
-  const requirementByCategory = useMemo(() => {
-    const map = new Map<VendorCategory, EventPlan['vendorRequirements'][number]>();
-    for (const r of plan.vendorRequirements) map.set(r.category, r);
-    return map;
-  }, [plan.vendorRequirements]);
 
   const addVendor = () => {
     if (!form.name.trim()) return;
@@ -78,6 +74,14 @@ export function VendorsView({
   };
 
   const removeVendor = (id: string) => onVendors(plan.vendors.filter((v) => v.id !== id));
+
+  const toggleRequirement = (id: string) => {
+    onRequirements(
+      plan.vendorRequirements.map((requirement) =>
+        requirement.id === id ? { ...requirement, booked: !requirement.booked } : requirement,
+      ),
+    );
+  };
 
   const requirementProgress = plan.vendorRequirements.filter((r) => r.booked).length;
 
@@ -124,7 +128,14 @@ export function VendorsView({
                   ))}
                 </ul>
               </div>
-              {r.booked ? <span className="tag">booked</span> : null}
+              <button
+                type="button"
+                className={`ghost small ${r.booked ? 'booked' : ''}`}
+                aria-pressed={r.booked}
+                onClick={() => toggleRequirement(r.id)}
+              >
+                {r.booked ? 'Booked - click to undo' : 'Mark as booked'}
+              </button>
             </article>
           ))}
         </div>
@@ -232,7 +243,15 @@ export function VendorsView({
                         ))}
                       </select>
                     </td>
-                    <td>{v.followUpDate ? formatDate(v.followUpDate) : '—'}</td>
+                    <td>
+                      <input
+                        type="date"
+                        className="inline-input"
+                        value={v.followUpDate ?? ''}
+                        aria-label={`Follow-up date for ${v.name || 'vendor'}`}
+                        onChange={(e) => updateVendor(v.id, { followUpDate: e.target.value || undefined })}
+                      />
+                    </td>
                     <td>
                       <button
                         type="button"
@@ -315,7 +334,7 @@ export function VendorsView({
             Add vendor
           </button>
         </div>
-        {requirementByCategory.size > 0 ? (
+        {plan.vendorRequirements.length > 0 ? (
           <p className="muted">
             Tip: check a requirement card's guide figure against quotes you collect, then record the real quote here.
           </p>

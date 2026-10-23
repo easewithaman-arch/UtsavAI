@@ -5,9 +5,16 @@
  */
 import http from 'node:http';
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
+import zlib from 'node:zlib';
+import { pipeline } from 'node:stream';
+import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { handlePlan, handleCopilot, getStatus } from './ai.mjs';
+
+const pipe = promisify(pipeline);
+const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.json', '.svg', '.txt', '.map']);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -22,6 +29,8 @@ export const SECURITY_HEADERS = Object.freeze({
   'content-security-policy':
     "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self'; manifest-src 'self'; worker-src 'self'",
   'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-resource-policy': 'same-origin',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
   'referrer-policy': 'no-referrer',
   'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
   'x-content-type-options': 'nosniff',
@@ -188,9 +197,38 @@ export function safeFilePath(distDir, pathname) {
 }
 
 function serveStatic(req, res, pathname, distDir) {
-  if (!fs.existsSync(distDir)) {
+  return serveStaticAsync(req, res, pathname, distDir).catch(() => {
+    if (!res.headersSent) sendError(res, 500, 'SERVER_ERROR', 'Could not read that file.');
+    else res.destroy();
+  });
+}
+
+function etagFor(stat) {
+  return `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+}
+
+function acceptsGzip(req) {
+  const header = String(req.headers['accept-encoding'] || '');
+  return /\bgzip\b/i.test(header) && !/\bgzip\s*;\s*q\s*=\s*0(?:\.0+)?\b/i.test(header);
+}
+
+function cacheControlFor(pathname, ext) {
+  if (ext === '.html') return 'no-cache';
+  if (pathname.startsWith('/assets/')) return 'public, max-age=31536000, immutable';
+  return 'public, max-age=3600';
+}
+
+async function serveStaticAsync(req, res, pathname, distDir) {
+  let dirStat;
+  try {
+    dirStat = await fsp.stat(distDir);
+  } catch {
     res.writeHead(503, { ...SECURITY_HEADERS, 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
     res.end('Client build not found. Run "npm run build" first.');
+    return;
+  }
+  if (!dirStat.isDirectory()) {
+    sendError(res, 503, 'NO_BUILD', 'Client build not found.');
     return;
   }
 
@@ -206,33 +244,65 @@ function serveStatic(req, res, pathname, distDir) {
   }
 
   let filePath = requested;
+  let stat;
   try {
-    if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
-      filePath = path.join(distDir, 'index.html');
-    }
-    const stat = fs.statSync(filePath);
-    if (!stat.isFile()) throw new Error('Not a file.');
-    const ext = path.extname(filePath).toLowerCase();
-    const headers = {
-      ...SECURITY_HEADERS,
-      'content-type': MIME[ext] || 'application/octet-stream',
-      'content-length': stat.size,
-      'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=31536000, immutable',
-    };
-    res.writeHead(200, headers);
-    if (req.method === 'HEAD') {
-      res.end();
+    stat = await fsp.stat(filePath);
+    if (stat.isDirectory()) throw new Error('Directory.');
+  } catch {
+    if (path.extname(pathname) || pathname.startsWith('/assets/')) {
+      sendError(res, 404, 'NOT_FOUND', 'Not found.');
       return;
     }
-    const stream = fs.createReadStream(filePath);
-    stream.on('error', () => {
-      if (!res.headersSent) sendError(res, 500, 'SERVER_ERROR', 'Could not read that file.');
-      else res.destroy();
-    });
-    stream.pipe(res);
-  } catch {
-    sendError(res, 404, 'NOT_FOUND', 'Not found.');
+    filePath = path.join(distDir, 'index.html');
+    try {
+      stat = await fsp.stat(filePath);
+    } catch {
+      sendError(res, 404, 'NOT_FOUND', 'Not found.');
+      return;
+    }
   }
+  if (!stat.isFile()) {
+    sendError(res, 404, 'NOT_FOUND', 'Not found.');
+    return;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const etag = etagFor(stat);
+  const compressible = COMPRESSIBLE.has(ext);
+  const gzip = compressible && stat.size >= 512 && acceptsGzip(req);
+  const headers = {
+    ...SECURITY_HEADERS,
+    'content-type': MIME[ext] || 'application/octet-stream',
+    'cache-control': cacheControlFor(pathname, ext),
+    etag,
+    'last-modified': stat.mtime.toUTCString(),
+  };
+  if (compressible) headers.vary = 'Accept-Encoding';
+  if (gzip) headers['content-encoding'] = 'gzip';
+  else headers['content-length'] = String(stat.size);
+
+  const ifNoneMatch = String(req.headers['if-none-match'] || '');
+  if (
+    ifNoneMatch &&
+    (ifNoneMatch.trim() === '*' ||
+      ifNoneMatch
+        .split(',')
+        .map((tag) => tag.trim())
+        .some((tag) => tag === etag || tag === etag.replace(/^W\//, '')))
+  ) {
+    res.writeHead(304, headers);
+    res.end();
+    return;
+  }
+
+  res.writeHead(200, headers);
+  if (req.method === 'HEAD') {
+    res.end();
+    return;
+  }
+  const stream = fs.createReadStream(filePath);
+  if (gzip) await pipe(stream, zlib.createGzip({ level: 6 }), res);
+  else await pipe(stream, res);
 }
 
 export function createServer({
@@ -242,9 +312,13 @@ export function createServer({
 } = {}) {
   const checkRate = createRateLimiter({ max: rateLimitMax, windowMs: rateLimitWindowMs });
 
-  return http.createServer(async (req, res) => {
+  const server = http.createServer({ maxHeaderSize: 16 * 1024 }, async (req, res) => {
     let pathname;
     const rawUrl = req.url || '/';
+    if (rawUrl.length > 2048) {
+      sendError(res, 414, 'URI_TOO_LONG', 'That address is too long.');
+      return;
+    }
     if (/%2e/i.test(rawUrl) || /%252e/i.test(rawUrl) || containsTraversalSegment(rawUrl)) {
       sendError(res, 403, 'FORBIDDEN', 'Forbidden.');
       return;
@@ -326,6 +400,11 @@ export function createServer({
       });
     }
   });
+  server.headersTimeout = 20_000;
+  server.requestTimeout = 30_000;
+  server.keepAliveTimeout = 5_000;
+  server.maxRequestsPerSocket = 100;
+  return server;
 }
 
 export function start() {

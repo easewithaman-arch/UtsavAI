@@ -152,14 +152,6 @@ export function setAllocation(
   };
 }
 
-export function setActual(
-  categories: BudgetCategory[],
-  categoryId: CategoryId,
-  valueMinor: number,
-): BudgetCategory[] {
-  return categories.map((c) => (c.id === categoryId ? { ...c, actualMinor: clampMinor(valueMinor) } : c));
-}
-
 export interface BudgetChangeProposal {
   ok: boolean;
   reason?: string;
@@ -340,8 +332,9 @@ export function budgetWarnings(
   categories: BudgetCategory[],
   totalMinor: number,
   currency?: CurrencyCode,
+  totals = budgetTotals(categories, totalMinor),
 ): string[] {
-  const t = budgetTotals(categories, totalMinor);
+  const t = totals;
   const amount = (minor: number) => (currency ? formatMoney(minor, currency) : String(minor));
   const out: string[] = [];
   if (t.overSpent) {

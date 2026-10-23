@@ -45,10 +45,19 @@ export function clampMinor(value: number, min = 0, max = Number.MAX_SAFE_INTEGER
   return Math.min(max, Math.max(min, Math.round(value)));
 }
 
+export const CURRENCY_LOCALE: Record<CurrencyCode, string> = {
+  INR: 'en-IN',
+  USD: 'en-US',
+  EUR: 'en-IE',
+  GBP: 'en-GB',
+  AED: 'en-AE',
+  SGD: 'en-SG',
+};
+
 export function formatMoney(minor: number, currency: CurrencyCode): string {
   const decimals = CURRENCY_DECIMALS[currency] ?? 2;
   const major = minor / 100;
-  const formatted = major.toLocaleString('en-IN', {
+  const formatted = major.toLocaleString(CURRENCY_LOCALE[currency] ?? 'en-IN', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });

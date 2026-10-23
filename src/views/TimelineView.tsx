@@ -3,11 +3,10 @@ import type { EventPlan, PlanTask, Priority, TaskStatus } from '../domain/types'
 import {
   addTask,
   deleteTask,
-  overdueTasks,
   progressInfo,
   setTaskStatus,
   sortTasks,
-  taskFlags,
+  taskFlagMap,
   updateTask,
 } from '../domain/timeline';
 import { EVENT_TYPE_MAP } from '../domain/events';
@@ -29,14 +28,18 @@ export function TimelineView({
   const [draft, setDraft] = useState<Partial<PlanTask>>({});
 
   const progress = useMemo(() => progressInfo(plan.timeline.tasks), [plan.timeline.tasks]);
-  const overdue = useMemo(() => overdueTasks(plan.timeline.tasks), [plan.timeline.tasks]);
+  const flags = useMemo(() => taskFlagMap(plan.timeline.tasks), [plan.timeline.tasks]);
+  const overdue = useMemo(
+    () => plan.timeline.tasks.filter((task) => flags.get(task.id)?.overdue),
+    [plan.timeline.tasks, flags],
+  );
   const tasks = useMemo(() => {
-    const sorted = sortTasks(plan.timeline.tasks);
-    if (filter === 'overdue') return sorted.filter((t) => taskFlags(t).overdue);
-    if (filter === 'soon') return sorted.filter((t) => taskFlags(t).dueSoon);
+    const sorted = sortTasks(plan.timeline.tasks, flags);
+    if (filter === 'overdue') return sorted.filter((t) => flags.get(t.id)?.overdue);
+    if (filter === 'soon') return sorted.filter((t) => flags.get(t.id)?.dueSoon);
     if (filter === 'done') return sorted.filter((t) => t.status === 'done');
     return sorted;
-  }, [plan.timeline.tasks, filter]);
+  }, [plan.timeline.tasks, filter, flags]);
 
   const apply = (next: PlanTask[]) => onTasks(next, plan.timeline.milestones);
 
@@ -135,10 +138,10 @@ export function TimelineView({
       ) : (
         <ul className="task-list">
           {tasks.map((task) => {
-            const flags = taskFlags(task);
+            const flagsForTask = flags.get(task.id)!;
             const isEditing = editing === task.id;
             return (
-              <li key={task.id} className={`task ${flags.completed ? 'done' : ''} ${flags.overdue ? 'overdue' : ''}`}>
+              <li key={task.id} className={`task ${flagsForTask.completed ? 'done' : ''} ${flagsForTask.overdue ? 'overdue' : ''}`}>
                 <button
                   type="button"
                   className={`status-dot ${task.status}`}
@@ -186,9 +189,9 @@ export function TimelineView({
                     </div>
                     {task.description ? <p className="task-desc">{task.description}</p> : null}
                     <div className="task-meta">
-                      <span className={`due ${flags.overdue ? 'bad' : flags.dueSoon ? 'warn' : ''}`}>
+                      <span className={`due ${flagsForTask.overdue ? 'bad' : flagsForTask.dueSoon ? 'warn' : ''}`}>
                         Due {formatDate(task.dueDate)}
-                        {flags.overdue ? ' · overdue' : flags.dueSoon ? ' · due soon' : ''}
+                        {flagsForTask.overdue ? ' · overdue' : flagsForTask.dueSoon ? ' · due soon' : ''}
                       </span>
                       <span className="muted">{leadTimeLabel(task.leadDays)}</span>
                     </div>

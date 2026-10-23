@@ -1,20 +1,4 @@
-import type { EventPlan, EventTypeId, CategoryId, RequirementKey, Priority } from '../domain/types';
-import { EVENT_TYPES } from '../domain/events';
-
-type BooleanInput = { value: boolean; onChange: (next: boolean) => void };
-
-export function InlineToggle({ value, onChange }: BooleanInput) {
-  return (
-    <button
-      type="button"
-      className={`toggle ${value ? 'on' : 'off'}`}
-      aria-pressed={value}
-      onClick={() => onChange(!value)}
-    >
-      <span className="knob" />
-    </button>
-  );
-}
+import { Children, cloneElement, isValidElement, useId, type ReactElement, type ReactNode } from 'react';
 
 export interface SegmentedOption<T extends string> {
   value: T;
@@ -105,14 +89,29 @@ export function Field({
   label: string;
   hint?: string;
   error?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
+  const baseId = useId();
+  const hintId = hint && !error ? `${baseId}-hint` : undefined;
+  const errorId = error ? `${baseId}-error` : undefined;
+  const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;
+
+  let content = children;
+  if (describedBy && isValidElement(children) && Children.count(children) === 1) {
+    const child = children as ReactElement<{ 'aria-describedby'?: string; 'aria-invalid'?: boolean }>;
+    const existing = child.props['aria-describedby'];
+    content = cloneElement(child, {
+      'aria-describedby': [existing, describedBy].filter(Boolean).join(' '),
+      'aria-invalid': error ? true : undefined,
+    });
+  }
+
   return (
     <label className={`field ${error ? 'has-error' : ''}`}>
       <span className="field-label">{label}</span>
-      {children}
-      {hint && !error ? <span className="field-hint">{hint}</span> : null}
-      {error ? <span className="field-error" role="alert">{error}</span> : null}
+      {content}
+      {hintId ? <span className="field-hint" id={hintId}>{hint}</span> : null}
+      {error ? <span className="field-error" id={errorId} role="alert">{error}</span> : null}
     </label>
   );
 }
@@ -127,16 +126,3 @@ export function RiskList({ items, tone }: { items: string[]; tone: 'warn' | 'ris
     </ul>
   );
 }
-
-export type PlanSortKey = 'date' | 'updated';
-
-export interface EventTypeSelectOption {
-  id: EventTypeId;
-  label: string;
-}
-
-export function eventTypeOptions(): EventTypeSelectOption[] {
-  return EVENT_TYPES.map((t) => ({ id: t.id, label: t.label }));
-}
-
-export type { CategoryId, RequirementKey, Priority, EventPlan };

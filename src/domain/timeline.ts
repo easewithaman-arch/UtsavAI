@@ -77,10 +77,15 @@ export interface TaskFlags {
 
 export function taskFlags(task: PlanTask, today = todayIso()): TaskFlags {
   const completed = task.status === 'done';
-  const overdue = !completed && isValidIsoDate(task.dueDate) && daysBetween(today, task.dueDate) < 0;
-  const delta = daysBetween(today, task.dueDate);
+  const delta = isValidIsoDate(task.dueDate) ? daysBetween(today, task.dueDate) : Number.NaN;
+  const overdue = !completed && delta < 0;
   const dueSoon = !completed && delta >= 0 && delta <= 7;
   return { overdue, dueSoon, completed };
+}
+
+/** Computes each task's flags once, for sorting and filtering without duplicate date maths. */
+export function taskFlagMap(tasks: PlanTask[], today = todayIso()): Map<string, TaskFlags> {
+  return new Map(tasks.map((task) => [task.id, taskFlags(task, today)]));
 }
 
 export interface ProgressInfo {
@@ -219,43 +224,13 @@ export function deleteTask(tasks: PlanTask[], taskId: string): PlanTask[] {
   return tasks.filter((t) => t.id !== taskId).map((t) => (t.dependsOn === taskId ? { ...t, dependsOn: undefined } : t));
 }
 
-export function sortTasks(tasks: PlanTask[]): PlanTask[] {
+export function sortTasks(tasks: PlanTask[], flags = taskFlagMap(tasks)): PlanTask[] {
   const priorityRank: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
   return [...tasks].sort((a, b) => {
-    const flagA = taskFlags(a);
-    const flagB = taskFlags(b);
-    if (flagA.overdue !== flagB.overdue) return flagA.overdue ? -1 : 1;
+    const flagA = flags.get(a.id);
+    const flagB = flags.get(b.id);
+    if (Boolean(flagA?.overdue) !== Boolean(flagB?.overdue)) return flagA?.overdue ? -1 : 1;
     if (a.dueDate !== b.dueDate) return a.dueDate.localeCompare(b.dueDate);
     return priorityRank[a.priority] - priorityRank[b.priority];
   });
-}
-
-export function validateTaskDraft(raw: Record<string, unknown>): { ok: boolean; errors: Record<string, string>; data?: Omit<PlanTask, 'id'> } {
-  const errors: Record<string, string> = {};
-  const title = typeof raw.title === 'string' ? raw.title.trim() : '';
-  if (!title) errors.title = 'Task title is required.';
-  else if (title.length > 160) errors.title = 'Title is too long.';
-  const dueDate = raw.dueDate;
-  if (!isValidIsoDate(dueDate)) errors.dueDate = 'Enter a valid due date.';
-  const validCats: TaskCategory[] = ['planning', 'venue', 'catering', 'decoration', 'photography', 'entertainment', 'invitations', 'guests', 'logistics', 'finance'];
-  const category = raw.category as TaskCategory;
-  if (!validCats.includes(category)) errors.category = 'Choose a valid category.';
-  const priority = raw.priority as Priority;
-  if (priority !== 'high' && priority !== 'medium' && priority !== 'low') errors.priority = 'Choose a priority.';
-  if (Object.keys(errors).length > 0) return { ok: false, errors };
-  const status = (raw.status as TaskStatus) ?? 'todo';
-  return {
-    ok: true,
-    errors: {},
-    data: {
-      title,
-      description: typeof raw.description === 'string' ? raw.description.slice(0, 1000) : '',
-      category,
-      dueDate: dueDate as string,
-      leadDays: typeof raw.leadDays === 'number' ? Math.round(raw.leadDays) : 0,
-      priority,
-      status: status === 'in-progress' || status === 'done' ? status : 'todo',
-      estimatedCostMinor: typeof raw.estimatedCostMinor === 'number' && raw.estimatedCostMinor >= 0 ? Math.round(raw.estimatedCostMinor) : undefined,
-    },
-  };
 }

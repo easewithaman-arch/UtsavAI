@@ -34,7 +34,7 @@ completed tasks keep their original dates.
 
 ## Requirements
 
-- Node.js 20 or newer (developed on Node 24)
+- Node.js 22.12 or newer (developed on Node 24)
 - npm (on Windows, the `npm.cmd` shim works even where `npm.ps1` is blocked by
   execution policy)
 
@@ -158,7 +158,8 @@ npm test
 
 The suite covers the budget invariants, timeline logic and date shifts, input
 validation, the deterministic planner, copilot operation validation and application,
-intent parsing and storage round-tripping.
+intent parsing, storage round-tripping, CSV export safety, and the production server's
+security headers, gzip, caching and request limits.
 
 ## Privacy
 

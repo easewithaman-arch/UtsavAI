@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ChangeRecord, EventInput, EventPlan, PlanTask, Vendor } from './domain/types';
 import { generateDemoPlan } from './planner/demo';
 import { applyPlanOps, makeChangeRecord, type ApplyResult, type PlanOp } from './planner/ops';
@@ -8,23 +8,33 @@ import { exportChecklistCsv, exportPlanJson, printPlan } from './lib/export';
 import { restorePlan } from './persistence/storage';
 import { useDomain } from './ui/useDomain';
 import { Wizard } from './ui/Wizard';
-import { BudgetView } from './views/BudgetView';
-import { TimelineView } from './views/TimelineView';
-import { VendorsView } from './views/VendorsView';
-import { IdeasView } from './views/IdeasView';
-import { CopilotView, type CopilotMode } from './views/CopilotView';
-import { AboutView } from './views/AboutView';
+import type { CopilotMode } from './views/CopilotView';
 import { Segmented } from './ui/atoms';
 import { Logo, LogoMark, LogoWordmark } from './ui/Logo';
 import { formatDate, money, titleCase } from './ui/format';
 import { PLAN_SOURCE_LABELS } from './domain/labels';
 import { EVENT_TYPE_MAP } from './domain/events';
 
+const BudgetView = memo(lazy(() => import('./views/BudgetView').then((m) => ({ default: m.BudgetView }))));
+const TimelineView = memo(lazy(() => import('./views/TimelineView').then((m) => ({ default: m.TimelineView }))));
+const VendorsView = memo(lazy(() => import('./views/VendorsView').then((m) => ({ default: m.VendorsView }))));
+const IdeasView = memo(lazy(() => import('./views/IdeasView').then((m) => ({ default: m.IdeasView }))));
+const CopilotView = memo(lazy(() => import('./views/CopilotView').then((m) => ({ default: m.CopilotView }))));
+const AboutView = memo(lazy(() => import('./views/AboutView').then((m) => ({ default: m.AboutView }))));
+
+function SectionLoading() {
+  return (
+    <p className="muted" role="status">
+      Loading section…
+    </p>
+  );
+}
+
 type Tab = 'plan' | 'budget' | 'timeline' | 'vendors' | 'copilot';
 
 export default function App() {
   const domain = useDomain();
-  const { current } = domain;
+  const { current, savePlan, removePlan, selectPlan, importPlan, snapshot } = domain;
   const [mode, setMode] = useState<CopilotMode>({ mode: 'demo', model: null, provider: null });
   const [tab, setTab] = useState<Tab>('plan');
   const [busy, setBusy] = useState(false);
@@ -45,7 +55,7 @@ export default function App() {
     };
   }, []);
 
-  const generate = async (input: EventInput) => {
+  const generate = useCallback(async (input: EventInput) => {
     setBusy(true);
     setNotice(null);
 
@@ -69,48 +79,52 @@ export default function App() {
       plan = generateDemoPlan(input);
     }
 
-    const saved = domain.savePlan(plan);
+    const saved = savePlan(plan);
     setHistory([makeChangeRecord(`Created plan "${saved.input.name || 'Untitled event'}"`, [saved.overview.concept], 'user')]);
     setCreating(false);
     setView('app');
     setTab('plan');
     setBusy(false);
-  };
+  }, [mode.mode, savePlan]);
 
-  const applyOps = (ops: PlanOp[]): ApplyResult => {
+  const applyOps = useCallback((ops: PlanOp[]): ApplyResult => {
     if (!current) throw new Error('Select a plan before applying changes.');
     const result = applyPlanOps(current, ops);
     const id = result.plan.id || current.id;
-    const saved = domain.savePlan({ ...result.plan, id });
+    const saved = savePlan({ ...result.plan, id });
     setHistory((prev) => [
       ...prev,
       makeChangeRecord(result.changes.join('; ') || 'Assistant change', result.warnings, mode.mode === 'ai' ? 'copilot-ai' : 'copilot-demo'),
     ]);
     return { ...result, plan: saved };
-  };
+  }, [current, mode.mode, savePlan]);
 
-  const mutatePlan = (patch: (plan: EventPlan) => EventPlan) => {
+  const mutatePlan = useCallback((patch: (plan: EventPlan) => EventPlan) => {
     if (!current) return;
-    domain.savePlan(patch(current));
-  };
+    savePlan(patch(current));
+  }, [current, savePlan]);
 
-  const onTasks = (tasks: PlanTask[], milestones: EventPlan['timeline']['milestones']) => {
+  const onTasks = useCallback((tasks: PlanTask[], milestones: EventPlan['timeline']['milestones']) => {
     mutatePlan((plan) => ({ ...plan, timeline: { tasks, milestones } }));
-  };
+  }, [mutatePlan]);
 
-  const onVendors = (vendors: Vendor[]) => {
+  const onVendors = useCallback((vendors: Vendor[]) => {
     mutatePlan((plan) => ({ ...plan, vendors }));
-  };
+  }, [mutatePlan]);
 
-  const onAllocations = (categories: EventPlan['budget']['categories']) => {
+  const onRequirements = useCallback((vendorRequirements: EventPlan['vendorRequirements']) => {
+    mutatePlan((plan) => ({ ...plan, vendorRequirements }));
+  }, [mutatePlan]);
+
+  const onAllocations = useCallback((categories: EventPlan['budget']['categories']) => {
     mutatePlan((plan) => ({ ...plan, budget: { ...plan.budget, categories } }));
-  };
+  }, [mutatePlan]);
 
-  const onActuals = (categories: EventPlan['budget']['categories']) => {
+  const onActuals = useCallback((categories: EventPlan['budget']['categories']) => {
     mutatePlan((plan) => ({ ...plan, budget: { ...plan.budget, categories } }));
-  };
+  }, [mutatePlan]);
 
-  const importFromFile = async (file: File) => {
+  const importFromFile = useCallback(async (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
       setNotice('That file is too large. UtsavAI plan files are normally well under 5 MB.');
       return;
@@ -121,25 +135,26 @@ export default function App() {
       setNotice('We could not open that file. Make sure it is a plan file you downloaded from UtsavAI.');
       return;
     }
-    domain.importPlan(plan);
-    setHistory([]);
-    setCreating(false);
-    setTab('plan');
-    setView('app');
-  };
-
-  const openPlan = (id: string) => {
-    domain.selectPlan(id);
+    importPlan(plan);
     setHistory([]);
     setCreating(false);
     setShowLibrary(false);
     setTab('plan');
     setView('app');
-  };
+  }, [importPlan]);
+
+  const openPlan = useCallback((id: string) => {
+    selectPlan(id);
+    setHistory([]);
+    setCreating(false);
+    setShowLibrary(false);
+    setTab('plan');
+    setView('app');
+  }, [selectPlan]);
 
   const meta = useMemo(() => (current ? EVENT_TYPE_MAP[current.input.type] : null), [current]);
 
-  if (!domain.snapshot.loaded) {
+  if (!snapshot.loaded) {
     return (
       <div className="app loading">
         <Logo className="loading-logo" height={44} />
@@ -150,6 +165,9 @@ export default function App() {
 
   return (
     <div className="app">
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <header className="app-header">
         <button
           type="button"
@@ -175,7 +193,7 @@ export default function App() {
             aria-controls="saved-plans"
             onClick={() => setShowLibrary((v) => !v)}
           >
-            My plans ({domain.snapshot.plans.length})
+            My plans ({snapshot.plans.length})
           </button>
         </div>
       </header>
@@ -183,11 +201,11 @@ export default function App() {
       {showLibrary ? (
         <aside className="library" id="saved-plans" aria-label="Saved plans">
           <h3>Saved plans</h3>
-          {domain.snapshot.plans.length === 0 ? (
+          {snapshot.plans.length === 0 ? (
             <p className="muted">No plans yet. Generate one from a worked example or build your own.</p>
           ) : (
             <ul className="library-list">
-              {domain.snapshot.plans.map((p) => (
+              {snapshot.plans.map((p) => (
                 <li key={p.id} className={p.id === current?.id ? 'active' : ''}>
                   <button
                     type="button"
@@ -202,7 +220,7 @@ export default function App() {
                   <button
                     type="button"
                     className="icon-btn danger"
-                    onClick={() => domain.removePlan(p.id)}
+                    onClick={() => removePlan(p.id)}
                     aria-label={`Delete ${p.input.name || 'plan'}`}
                   >
                     Delete
@@ -238,28 +256,30 @@ export default function App() {
         </div>
       ) : null}
 
-      {domain.snapshot.skipped > 0 ? (
+      {snapshot.skipped > 0 ? (
         <div className="notice warn" role="status">
-          {domain.snapshot.skipped} saved plan(s) could not be opened and were skipped.
+          {snapshot.skipped} saved plan(s) could not be opened and were skipped.
         </div>
       ) : null}
 
-      {domain.snapshot.saveError ? (
+      {snapshot.saveError ? (
         <div className="notice warn" role="alert">
-          {domain.snapshot.saveError}
+          {snapshot.saveError}
         </div>
       ) : null}
 
       {view === 'about' ? (
-        <main className="main">
-          <AboutView />
+        <main className="main" id="main-content" tabIndex={-1}>
+          <Suspense fallback={<SectionLoading />}>
+            <AboutView />
+          </Suspense>
         </main>
       ) : creating || !current ? (
-        <main className="main">
+        <main className="main" id="main-content" tabIndex={-1}>
           <Wizard onGenerate={generate} busy={busy} />
         </main>
       ) : (
-        <main className="main">
+        <main className="main" id="main-content" tabIndex={-1}>
           <div className="plan-bar">
             <div className="plan-heading">
               <h1 className="plan-title">{current.input.name || 'Untitled event'}</h1>
@@ -276,6 +296,12 @@ export default function App() {
               </button>
               <button type="button" className="ghost" onClick={() => exportChecklistCsv(current, 'tasks')} title="Download the task list as a spreadsheet you can open in Excel, Google Sheets or Numbers">
                 Download task list
+              </button>
+              <button type="button" className="ghost" onClick={() => exportChecklistCsv(current, 'vendors')} title="Download your vendor shortlist and booking status as a spreadsheet">
+                Download vendor list
+              </button>
+              <button type="button" className="ghost" onClick={() => exportChecklistCsv(current, 'budget')} title="Download the budget by category as a spreadsheet">
+                Download budget
               </button>
               <button type="button" className="ghost" onClick={() => printPlan()}>
                 Print
@@ -301,13 +327,17 @@ export default function App() {
             />
           </nav>
 
-          <div className="view-container">
-            {tab === 'plan' ? <IdeasView plan={current} /> : null}
-            {tab === 'budget' ? <BudgetView plan={current} onAllocations={onAllocations} onActuals={onActuals} /> : null}
-            {tab === 'timeline' ? <TimelineView plan={current} onTasks={onTasks} /> : null}
-            {tab === 'vendors' ? <VendorsView plan={current} onVendors={onVendors} /> : null}
-            {tab === 'copilot' ? <CopilotView plan={current} mode={mode} history={history} onApply={applyOps} /> : null}
-          </div>
+          <Suspense fallback={<SectionLoading />}>
+            <div className="view-container">
+              {tab === 'plan' ? <IdeasView plan={current} /> : null}
+              {tab === 'budget' ? <BudgetView plan={current} onAllocations={onAllocations} onActuals={onActuals} /> : null}
+              {tab === 'timeline' ? <TimelineView plan={current} onTasks={onTasks} /> : null}
+              {tab === 'vendors' ? (
+                <VendorsView plan={current} onVendors={onVendors} onRequirements={onRequirements} />
+              ) : null}
+              {tab === 'copilot' ? <CopilotView plan={current} mode={mode} history={history} onApply={applyOps} /> : null}
+            </div>
+          </Suspense>
         </main>
       )}
 

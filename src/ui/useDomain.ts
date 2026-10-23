@@ -135,5 +135,3 @@ export function useDomain() {
 
   return { snapshot, current, savePlan, removePlan, selectPlan, importPlan };
 }
-
-export type DomainApi = ReturnType<typeof useDomain>;
