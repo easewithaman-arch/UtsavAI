@@ -7,7 +7,8 @@ export function AboutView() {
         <div className="about-hero-inner">
           <Logo height={56} />
           <div>
-            <h2>About UtsavAI</h2>
+            <h1>About UtsavAI</h1>
+      <h2 className="sr-only">How UtsavAI works</h2>
             <p className="about-lede">
               A GenAI-powered celebration and event planner that turns a short event brief into a complete, honest plan
               with exact budgets, dated timelines, vendor checklists, ideas, risks with mitigations, and an adaptive

@@ -77,7 +77,11 @@ export function loadPlans(storage: StorageLike | null = defaultStorage()): LoadR
     const plan = envelope.plan as EventPlan;
     plan.vendors = sanitizeVendors(plan.vendors);
     const categories = sanitizeBudgetCategories(plan.budget.categories);
-    if (categories) plan.budget.categories = categories;
+    if (!categories) {
+      skipped++;
+      continue;
+    }
+    plan.budget.categories = categories;
     plans.push(plan);
   }
   return { plans, skipped };
@@ -136,6 +140,9 @@ export function restorePlan(serialized: string): EventPlan | null {
     if (!check.ok) return null;
     const plan = envelope.plan as EventPlan;
     plan.vendors = sanitizeVendors(plan.vendors);
+    const categories = sanitizeBudgetCategories(plan.budget.categories);
+    if (!categories) return null;
+    plan.budget.categories = categories;
     return plan;
   } catch {
     return null;

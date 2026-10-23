@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ChangeRecord, EventInput, EventPlan, PlanTask, Vendor } from './domain/types';
 import { generateDemoPlan } from './planner/demo';
-import { applyPlanOps, makeChangeRecord } from './planner/ops';
+import { applyPlanOps, makeChangeRecord, type ApplyResult, type PlanOp } from './planner/ops';
 import { buildPlanFromDraft, fetchStatus, requestAiPlan } from './planner/ai';
 import { validatePlanShape } from './domain/validate';
 import { exportChecklistCsv, exportPlanJson, printPlan } from './lib/export';
@@ -32,6 +32,7 @@ export default function App() {
   const [history, setHistory] = useState<ChangeRecord[]>([]);
   const [showLibrary, setShowLibrary] = useState(false);
   const [view, setView] = useState<'app' | 'about'>('app');
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -68,15 +69,16 @@ export default function App() {
       plan = generateDemoPlan(input);
     }
 
-    const { vendors, ...rest } = plan;
-    const saved = domain.savePlan({ ...rest, vendors, source: plan.source });
+    const saved = domain.savePlan(plan);
     setHistory([makeChangeRecord(`Created plan "${saved.input.name || 'Untitled event'}"`, [saved.overview.concept], 'user')]);
+    setCreating(false);
+    setView('app');
     setTab('plan');
     setBusy(false);
   };
 
-  const applyOps = (ops: Parameters<typeof applyPlanOps>[1]) => {
-    if (!current) return { plan: current!, changes: [], warnings: [] };
+  const applyOps = (ops: PlanOp[]): ApplyResult => {
+    if (!current) throw new Error('Select a plan before applying changes.');
     const result = applyPlanOps(current, ops);
     const id = result.plan.id || current.id;
     const saved = domain.savePlan({ ...result.plan, id });
@@ -109,6 +111,10 @@ export default function App() {
   };
 
   const importFromFile = async (file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      setNotice('That file is too large. UtsavAI plan files are normally well under 5 MB.');
+      return;
+    }
     const text = await file.text();
     const plan = restorePlan(text);
     if (!plan) {
@@ -116,6 +122,17 @@ export default function App() {
       return;
     }
     domain.importPlan(plan);
+    setHistory([]);
+    setCreating(false);
+    setTab('plan');
+    setView('app');
+  };
+
+  const openPlan = (id: string) => {
+    domain.selectPlan(id);
+    setHistory([]);
+    setCreating(false);
+    setShowLibrary(false);
     setTab('plan');
     setView('app');
   };
@@ -134,26 +151,37 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="brand" onClick={() => { setShowLibrary(false); setView('app'); }}>
+        <button
+          type="button"
+          className="brand"
+          aria-label="UtsavAI home"
+          onClick={() => { setShowLibrary(false); setCreating(false); setView('app'); }}
+        >
           <LogoMark className="brand-mark" size={38} />
-          <div className="brand-text">
+          <span className="brand-text">
             <LogoWordmark className="brand-wordmark" height={30} />
             <span className="brand-sub">Celebration &amp; event planner</span>
-          </div>
-        </div>
+          </span>
+        </button>
         <div className="header-right">
           <button type="button" className="ghost" onClick={() => { setView('about'); setShowLibrary(false); }}>About</button>
           <span className={`mode-badge ${mode.mode}`} title={mode.model ?? undefined}>
             {mode.mode === 'ai' ? 'AI mode' : 'Built-in mode'}
           </span>
-          <button type="button" className="ghost" onClick={() => setShowLibrary((v) => !v)}>
+          <button
+            type="button"
+            className="ghost"
+            aria-expanded={showLibrary}
+            aria-controls="saved-plans"
+            onClick={() => setShowLibrary((v) => !v)}
+          >
             My plans ({domain.snapshot.plans.length})
           </button>
         </div>
       </header>
 
       {showLibrary ? (
-        <aside className="library">
+        <aside className="library" id="saved-plans" aria-label="Saved plans">
           <h3>Saved plans</h3>
           {domain.snapshot.plans.length === 0 ? (
             <p className="muted">No plans yet. Generate one from a worked example or build your own.</p>
@@ -164,12 +192,7 @@ export default function App() {
                   <button
                     type="button"
                     className="library-item"
-                    onClick={() => {
-                      domain.selectPlan(p.id);
-                      setShowLibrary(false);
-                      setTab('plan');
-                      setView('app');
-                    }}
+                    onClick={() => openPlan(p.id)}
                   >
                     <span className="library-name">{p.input.name || 'Untitled event'}</span>
                     <span className="muted">
@@ -207,7 +230,7 @@ export default function App() {
       ) : null}
 
       {notice ? (
-        <div className="notice">
+        <div className="notice" role="status">
           <span>{notice}</span>
           <button type="button" className="icon-btn" onClick={() => setNotice(null)}>
             Dismiss
@@ -216,8 +239,14 @@ export default function App() {
       ) : null}
 
       {domain.snapshot.skipped > 0 ? (
-        <div className="notice warn">
+        <div className="notice warn" role="status">
           {domain.snapshot.skipped} saved plan(s) could not be opened and were skipped.
+        </div>
+      ) : null}
+
+      {domain.snapshot.saveError ? (
+        <div className="notice warn" role="alert">
+          {domain.snapshot.saveError}
         </div>
       ) : null}
 
@@ -225,7 +254,7 @@ export default function App() {
         <main className="main">
           <AboutView />
         </main>
-      ) : !current ? (
+      ) : creating || !current ? (
         <main className="main">
           <Wizard onGenerate={generate} busy={busy} />
         </main>
@@ -233,7 +262,7 @@ export default function App() {
         <main className="main">
           <div className="plan-bar">
             <div className="plan-heading">
-              <h2>{current.input.name || 'Untitled event'}</h2>
+              <h1 className="plan-title">{current.input.name || 'Untitled event'}</h1>
               <p className="plan-meta">
                 {meta?.label} · {formatDate(current.input.date)} · {current.input.guestCount} guests ·{' '}
                 {money(current.input.budget.totalMinor, current.input.budget.currency)} ·{' '}
@@ -241,9 +270,7 @@ export default function App() {
               </p>
             </div>
             <div className="plan-tools">
-              <button type="button" className="ghost" onClick={() => domain.savePlan(current)}>
-                Save
-              </button>
+              <span className="save-state">Saved on this device</span>
               <button type="button" className="ghost" onClick={() => exportPlanJson(current)} title="Download a copy of the whole plan so you can keep it or move it to another device">
                 Download plan
               </button>
@@ -253,7 +280,7 @@ export default function App() {
               <button type="button" className="ghost" onClick={() => printPlan()}>
                 Print
               </button>
-              <button type="button" className="ghost" onClick={() => { domain.removePlan(current.id); setView('app'); }}>
+              <button type="button" className="ghost" onClick={() => { setCreating(true); setShowLibrary(false); setView('app'); }}>
                 New plan
               </button>
             </div>
@@ -261,6 +288,7 @@ export default function App() {
 
           <nav className="tabs">
             <Segmented
+              label="Plan sections"
               options={[
                 { value: 'plan', label: 'Overview' },
                 { value: 'budget', label: 'Budget' },

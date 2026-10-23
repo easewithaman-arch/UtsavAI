@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { EventPlan, Vendor, VendorCategory } from '../domain/types';
 import { newId } from '../domain/events';
-import { money } from '../ui/format';
-import { formatDate, titleCase } from '../ui/format';
+import { parseMoneyInput } from '../domain/money';
+import { formatDate, money, titleCase } from '../ui/format';
 import { EmptyState, Field } from '../ui/atoms';
 
 const VENDOR_CATEGORIES: VendorCategory[] = [
@@ -65,8 +65,8 @@ export function VendorsView({
       source: 'user',
     };
     if (form.quoted.trim()) {
-      const minor = Math.round(Number(form.quoted.replace(/[^0-9.]/g, '')) * 100);
-      if (Number.isFinite(minor) && minor > 0) vendor.quotedPriceMinor = minor;
+      const minor = parseMoneyInput(form.quoted, currency);
+      if (minor !== null && minor > 0) vendor.quotedPriceMinor = minor;
     }
     if (form.followUpDate) vendor.followUpDate = form.followUpDate;
     onVendors([...plan.vendors, vendor]);
@@ -83,6 +83,7 @@ export function VendorsView({
 
   return (
     <div className="vendors-view">
+      <h2 className="sr-only">Vendors</h2>
       <section className="panel">
         <h3>
           What to source · {requirementProgress}/{plan.vendorRequirements.length} booked
@@ -139,28 +140,36 @@ export function VendorsView({
         ) : (
           <div className="table-wrap">
             <table className="data-table">
+              <caption className="sr-only">Vendors you have contacted, their quotes and booking status</caption>
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Category</th>
-                  <th>Contact</th>
-                  <th>Quote</th>
-                  <th>Booking</th>
-                  <th>Payment</th>
-                  <th>Follow-up</th>
-                  <th />
+                  <th scope="col">Name</th>
+                  <th scope="col">Category</th>
+                  <th scope="col">Contact</th>
+                  <th scope="col">Quote</th>
+                  <th scope="col">Booking</th>
+                  <th scope="col">Payment</th>
+                  <th scope="col">Follow-up</th>
+                  <th scope="col">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {plan.vendors.map((v) => (
                   <tr key={v.id}>
                     <td>
-                      <input className="inline-input" value={v.name} onChange={(e) => updateVendor(v.id, { name: e.target.value })} />
+                      <input
+                        className="inline-input"
+                        value={v.name}
+                        maxLength={120}
+                        aria-label={`Vendor name for ${v.name || 'new vendor'}`}
+                        onChange={(e) => updateVendor(v.id, { name: e.target.value })}
+                      />
                     </td>
                     <td>
                       <select
                         className="inline-input"
                         value={v.category}
+                        aria-label={`Category for ${v.name || 'vendor'}`}
                         onChange={(e) => updateVendor(v.id, { category: e.target.value as VendorCategory })}
                       >
                         {VENDOR_CATEGORIES.map((c) => (
@@ -174,16 +183,24 @@ export function VendorsView({
                       <input
                         className="inline-input"
                         value={v.contact}
+                        maxLength={300}
+                        aria-label={`Contact for ${v.name || 'vendor'}`}
                         onChange={(e) => updateVendor(v.id, { contact: e.target.value })}
                       />
                     </td>
                     <td>
                       <input
                         className="inline-input small"
-                        defaultValue={v.quotedPriceMinor ? (v.quotedPriceMinor / 100).toString() : ''}
+                        inputMode="decimal"
+                        defaultValue={v.quotedPriceMinor ? (v.quotedPriceMinor / 100).toFixed(2) : ''}
+                        aria-label={`Quote for ${v.name || 'vendor'} in ${currency}`}
                         onBlur={(e) => {
-                          const parsed = Math.round(Number(e.target.value.replace(/[^0-9.]/g, '')) * 100);
-                          updateVendor(v.id, { quotedPriceMinor: Number.isFinite(parsed) && parsed > 0 ? parsed : undefined });
+                          const parsed = parseMoneyInput(e.target.value, currency);
+                          if (parsed === null) {
+                            e.target.value = v.quotedPriceMinor ? (v.quotedPriceMinor / 100).toFixed(2) : '';
+                            return;
+                          }
+                          updateVendor(v.id, { quotedPriceMinor: parsed > 0 ? parsed : undefined });
                         }}
                       />
                     </td>
@@ -191,6 +208,7 @@ export function VendorsView({
                       <select
                         className="inline-input"
                         value={v.bookingStatus}
+                        aria-label={`Booking status for ${v.name || 'vendor'}`}
                         onChange={(e) => updateVendor(v.id, { bookingStatus: e.target.value as Vendor['bookingStatus'] })}
                       >
                         {STATUSES.map((s) => (
@@ -204,6 +222,7 @@ export function VendorsView({
                       <select
                         className="inline-input"
                         value={v.paymentStatus}
+                        aria-label={`Payment status for ${v.name || 'vendor'}`}
                         onChange={(e) => updateVendor(v.id, { paymentStatus: e.target.value as Vendor['paymentStatus'] })}
                       >
                         {PAYMENTS.map((s) => (
@@ -215,7 +234,12 @@ export function VendorsView({
                     </td>
                     <td>{v.followUpDate ? formatDate(v.followUpDate) : '—'}</td>
                     <td>
-                      <button type="button" className="icon-btn danger" onClick={() => removeVendor(v.id)}>
+                      <button
+                        type="button"
+                        className="icon-btn danger"
+                        onClick={() => removeVendor(v.id)}
+                        aria-label={`Remove ${v.name || 'vendor'}`}
+                      >
                         Remove
                       </button>
                     </td>
@@ -231,7 +255,7 @@ export function VendorsView({
         <h3>Add a vendor</h3>
         <div className="form-grid">
           <Field label="Name">
-            <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            <input value={form.name} maxLength={120} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
           </Field>
           <Field label="Category">
             <select
@@ -246,7 +270,7 @@ export function VendorsView({
             </select>
           </Field>
           <Field label="Contact" hint="Phone, email or handle.">
-            <input value={form.contact} onChange={(e) => setForm((f) => ({ ...f, contact: e.target.value }))} />
+            <input value={form.contact} maxLength={300} onChange={(e) => setForm((f) => ({ ...f, contact: e.target.value }))} />
           </Field>
           <Field label={`Quote (${currency})`}>
             <input value={form.quoted} inputMode="numeric" onChange={(e) => setForm((f) => ({ ...f, quoted: e.target.value }))} />
@@ -283,7 +307,7 @@ export function VendorsView({
             />
           </Field>
           <Field label="Notes">
-            <input value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
+            <input value={form.notes} maxLength={2000} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
           </Field>
         </div>
         <div className="wizard-actions">

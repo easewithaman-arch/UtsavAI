@@ -65,6 +65,16 @@ const PRIORITIES = new Set<Priority>(['high', 'medium', 'low']);
 const FOODS = new Set(['vegetarian', 'vegan', 'non-vegetarian', 'mixed', 'unspecified']);
 const SETTINGS = new Set(['indoor', 'outdoor', 'either']);
 const TASK_STATUSES = new Set<PlanTask['status']>(['todo', 'in-progress', 'done']);
+const TASK_CATEGORIES = new Set<PlanTask['category']>([
+  'planning', 'venue', 'catering', 'decoration', 'photography',
+  'entertainment', 'invitations', 'guests', 'logistics', 'finance',
+]);
+const VENDOR_CATEGORIES = new Set<Vendor['category']>([
+  'venue', 'catering', 'photography', 'decoration', 'entertainment',
+  'transportation', 'accommodation', 'other',
+]);
+const BOOKING_STATUSES = new Set<Vendor['bookingStatus']>(['not-contacted', 'shortlist', 'contacted', 'quoted', 'booked', 'declined']);
+const PAYMENT_STATUSES = new Set<Vendor['paymentStatus']>(['none', 'advance-paid', 'partial', 'paid']);
 
 function str(v: unknown, max: number): string | null {
   return typeof v === 'string' && v.length <= max ? v : null;
@@ -106,8 +116,8 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
         if (typeof o.value !== 'number' || o.value < 1 || o.value > 72) return { error: 'Duration must be 1-72 hours.' };
         return { op: { op: 'setEventField', field, value: Math.round(o.value) } };
       }
-      const value = str(o.value, 120);
-      if (value === null || !value.trim()) return { error: `${fieldLabel(field)} cannot be blank.` };
+      const value = str(o.value, field === 'name' ? 80 : 120);
+      if (value === null || !value.trim()) return { error: `${fieldLabel(field)} cannot be blank or too long.` };
       return { op: { op: 'setEventField', field, value: value.trim() } };
     }
     case 'setPreference': {
@@ -120,7 +130,7 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
         if (!value || !FOODS.has(value)) return { error: 'Invalid food preference.' };
         return { op: { op: 'setPreference', field, value } };
       }
-      const value = str(o.value, 400);
+      const value = str(o.value, field === 'theme' ? 200 : 400);
       if (value === null) return { error: 'Preference value is too long.' };
       return { op: { op: 'setPreference', field, value } };
     }
@@ -159,15 +169,20 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
       if (!title || !title.trim()) return { error: 'Task title is required.' };
       const dueDate = str(task.dueDate, 10);
       if (!dueDate || !isValidIsoDate(dueDate)) return { error: 'That due date could not be read.' };
-      if (task.priority !== 'high' && task.priority !== 'medium' && task.priority !== 'low') return { error: 'Task priority invalid.' };
-      const leadDays = typeof task.leadDays === 'number' ? Math.round(task.leadDays) : 0;
+      if (!PRIORITIES.has(task.priority as Priority)) return { error: 'Task priority invalid.' };
+      const leadDays =
+        typeof task.leadDays === 'number' && Number.isSafeInteger(task.leadDays) && task.leadDays >= -365 && task.leadDays <= 365
+          ? task.leadDays
+          : 0;
       return {
         op: {
           op: 'addTask',
           task: {
             title: title.trim(),
             description: str(task.description, 1000) ?? '',
-            category: (str(task.category, 30) as PlanTask['category']) ?? 'planning',
+            category: TASK_CATEGORIES.has(task.category as PlanTask['category'])
+              ? (task.category as PlanTask['category'])
+              : 'planning',
             dueDate,
             leadDays,
             priority: task.priority as Priority,
@@ -206,7 +221,10 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
         if (!TASK_STATUSES.has(p.status as PlanTask['status'])) return { error: 'Task status invalid.' };
         patch.status = p.status;
       }
-      if (p.category !== undefined) patch.category = p.category;
+      if (p.category !== undefined) {
+        if (!TASK_CATEGORIES.has(p.category as PlanTask['category'])) return { error: 'Task category invalid.' };
+        patch.category = p.category;
+      }
       if (p.estimatedCostMinor !== undefined) {
         if (typeof p.estimatedCostMinor !== 'number' || !Number.isSafeInteger(p.estimatedCostMinor) || p.estimatedCostMinor < 0) {
           return { error: 'Task cost invalid.' };
@@ -232,21 +250,29 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
       const vendor = v as Record<string, unknown>;
       const name = str(vendor.name, 120);
       if (!name?.trim()) return { error: 'Vendor name is required.' };
+      const followUpDate = str(vendor.followUpDate, 10);
+      if (followUpDate && !isValidIsoDate(followUpDate)) return { error: 'That follow-up date could not be read.' };
       return {
         op: {
           op: 'addVendor',
           vendor: {
             name: name.trim(),
-            category: (str(vendor.category, 30) as Vendor['category']) ?? 'other',
+            category: VENDOR_CATEGORIES.has(vendor.category as Vendor['category'])
+              ? (vendor.category as Vendor['category'])
+              : 'other',
             contact: str(vendor.contact, 300) ?? '',
             quotedPriceMinor:
               typeof vendor.quotedPriceMinor === 'number' && Number.isSafeInteger(vendor.quotedPriceMinor) && vendor.quotedPriceMinor >= 0
                 ? vendor.quotedPriceMinor
                 : undefined,
-            bookingStatus: (str(vendor.bookingStatus, 30) as Vendor['bookingStatus']) ?? 'not-contacted',
-            paymentStatus: (str(vendor.paymentStatus, 30) as Vendor['paymentStatus']) ?? 'none',
+            bookingStatus: BOOKING_STATUSES.has(vendor.bookingStatus as Vendor['bookingStatus'])
+              ? (vendor.bookingStatus as Vendor['bookingStatus'])
+              : 'not-contacted',
+            paymentStatus: PAYMENT_STATUSES.has(vendor.paymentStatus as Vendor['paymentStatus'])
+              ? (vendor.paymentStatus as Vendor['paymentStatus'])
+              : 'none',
             notes: str(vendor.notes, 2000) ?? '',
-            followUpDate: isValidIsoDate(vendor.followUpDate) ? vendor.followUpDate : undefined,
+            followUpDate: followUpDate || undefined,
             source: 'user',
           },
         },
@@ -256,7 +282,58 @@ export function validateOp(raw: unknown): { op: PlanOp } | { error: string } {
       const vendorId = str(o.vendorId, 80);
       if (!vendorId) return { error: 'That vendor could not be found.' };
       if (!o.patch || typeof o.patch !== 'object') return { error: 'That vendor change could not be read.' };
-      return { op: { op: 'updateVendor', vendorId, patch: o.patch as Record<string, unknown> } };
+      const raw = o.patch as Record<string, unknown>;
+      const patch: Record<string, unknown> = {};
+      if (raw.name !== undefined) {
+        const name = str(raw.name, 120);
+        if (!name?.trim()) return { error: 'Vendor name invalid.' };
+        patch.name = name.trim();
+      }
+      if (raw.category !== undefined) {
+        if (!VENDOR_CATEGORIES.has(raw.category as Vendor['category'])) return { error: 'Vendor category invalid.' };
+        patch.category = raw.category;
+      }
+      if (raw.contact !== undefined) {
+        const contact = str(raw.contact, 300);
+        if (contact === null) return { error: 'Vendor contact is too long.' };
+        patch.contact = contact;
+      }
+      if (raw.quotedPriceMinor !== undefined) {
+        if (raw.quotedPriceMinor === null) {
+          patch.quotedPriceMinor = undefined;
+        } else if (
+          typeof raw.quotedPriceMinor !== 'number' ||
+          !Number.isSafeInteger(raw.quotedPriceMinor) ||
+          raw.quotedPriceMinor < 0
+        ) {
+          return { error: 'Vendor quote invalid.' };
+        } else {
+          patch.quotedPriceMinor = raw.quotedPriceMinor;
+        }
+      }
+      if (raw.bookingStatus !== undefined) {
+        if (!BOOKING_STATUSES.has(raw.bookingStatus as Vendor['bookingStatus'])) return { error: 'Booking status invalid.' };
+        patch.bookingStatus = raw.bookingStatus;
+      }
+      if (raw.paymentStatus !== undefined) {
+        if (!PAYMENT_STATUSES.has(raw.paymentStatus as Vendor['paymentStatus'])) return { error: 'Payment status invalid.' };
+        patch.paymentStatus = raw.paymentStatus;
+      }
+      if (raw.notes !== undefined) {
+        const notes = str(raw.notes, 2000);
+        if (notes === null) return { error: 'Vendor notes are too long.' };
+        patch.notes = notes;
+      }
+      if (raw.followUpDate !== undefined) {
+        if (raw.followUpDate === '' || raw.followUpDate === null) {
+          patch.followUpDate = undefined;
+        } else {
+          const date = str(raw.followUpDate, 10);
+          if (!date || !isValidIsoDate(date)) return { error: 'That follow-up date could not be read.' };
+          patch.followUpDate = date;
+        }
+      }
+      return { op: { op: 'updateVendor', vendorId, patch } };
     }
     case 'deleteVendor': {
       const vendorId = str(o.vendorId, 80);
@@ -327,7 +404,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
             categories: applyBudgetChange(current.budget.categories, proposal),
           },
         };
-        refreshEstimates(current);
+        current = refreshEstimates(current);
         changes.push(
           `Budget changed from ${formatMoney(oldTotal, current.input.budget.currency)} to ${formatMoney(op.totalMinor, current.input.budget.currency)}; ${proposal.deltas.length} categor${proposal.deltas.length === 1 ? 'y' : 'ies'} rebalanced.`,
         );
@@ -421,7 +498,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
             },
           };
         }
-        refreshInsufficient(current);
+        current = refreshInsufficient(current);
         if (current.budget.insufficient) {
           warnings.push(
             'After the guest-count change, estimated costs exceed the spendable budget - see the Budget tab for where the gap is.',
@@ -463,7 +540,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
         if (field === 'setting') {
           if (value === 'outdoor') warnings.push('Outdoor setting: keep the weather contingency from the risks section in play.');
           if (value === 'indoor') warnings.push('Indoor setting: the outdoor weather risk is reduced but venue layout may change.');
-          refreshIdeas(current);
+          current = refreshIdeas(current);
         }
         break;
       }
@@ -497,13 +574,13 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
             };
           }
         }
-        if (field === 'theme' || field === 'accessibility') refreshIdeas(current);
+        if (field === 'theme' || field === 'accessibility') current = refreshIdeas(current);
         break;
       }
       case 'setColors': {
         current = { ...current, input: { ...current.input, preferences: { ...current.input.preferences, colors: op.value } } };
         changes.push(`Colour palette updated to ${op.value.join(', ') || '(cleared)'}.`);
-        refreshIdeas(current);
+        current = refreshIdeas(current);
         break;
       }
       case 'setCategoryAllocation': {
@@ -526,7 +603,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
         changes.push(
           `${CATEGORY_NAMES[op.categoryId]} budget set to ${formatMoney(op.allocatedMinor, current.input.budget.currency)}.`,
         );
-        refreshInsufficient(current);
+        current = refreshInsufficient(current);
         break;
       }
       case 'setCategoryPriority': {
@@ -553,7 +630,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
         );
         current = { ...current, budget: { ...current.budget, categories: nextCategories } };
         changes.push('Budget rebalanced across categories using current priorities.');
-        refreshInsufficient(current);
+        current = refreshInsufficient(current);
         break;
       }
       case 'setRequirement': {
@@ -611,7 +688,7 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
           }
           warnings.push(`${CATEGORY_NAMES[categoryId]} added and the budget rebalanced - check the new allocations.`);
         }
-        refreshInsufficient(current);
+        current = refreshInsufficient(current);
         break;
       }
       case 'addTask': {
@@ -627,7 +704,8 @@ export function applyPlanOps(plan: EventPlan, ops: PlanOp[]): ApplyResult {
         }
         const before = task.dueDate;
         const nextTasks = updateTask(current.timeline.tasks, op.taskId, op.patch);
-        const after = nextTasks.find((t) => t.id === op.taskId)!;
+        const after = nextTasks.find((t) => t.id === op.taskId);
+        if (!after) break;
         if (after.status === 'done' && task.status !== 'done') {
           changes.push(`Task marked done: "${task.title}".`);
         } else if (after.dueDate !== before) {
@@ -718,36 +796,47 @@ function redistributeFreed(plan: EventPlan, freed: number): EventPlan {
   };
 }
 
-function refreshInsufficient(plan: EventPlan): void {
+function refreshInsufficient(plan: EventPlan): EventPlan {
   const totals = budgetTotals(plan.budget.categories, plan.input.budget.totalMinor);
-  plan.budget.insufficient = totals.estimatedMinor > totals.totalMinor - totals.contingencyMinor;
+  const insufficient = totals.estimatedMinor > totals.totalMinor - totals.contingencyMinor;
+  if (plan.budget.insufficient === insufficient) return plan;
+  return { ...plan, budget: { ...plan.budget, insufficient } };
 }
 
-function refreshEstimates(plan: EventPlan): void {
+function refreshEstimates(plan: EventPlan): EventPlan {
   const estimates = estimateCategoryCosts(plan.input);
-  plan.budget.categories = plan.budget.categories.map((c) =>
-    c.isContingency ? c : { ...c, estimatedMinor: estimates[c.id] ?? 0 },
-  );
-  refreshInsufficient(plan);
+  return refreshInsufficient({
+    ...plan,
+    budget: {
+      ...plan.budget,
+      categories: plan.budget.categories.map((c) =>
+        c.isContingency ? c : { ...c, estimatedMinor: estimates[c.id] ?? 0 },
+      ),
+    },
+  });
 }
 
-function refreshIdeas(plan: EventPlan): void {
+function refreshIdeas(plan: EventPlan): EventPlan {
   const input = plan.input;
+  let ideas = plan.ideas;
   if (input.preferences.theme.trim()) {
-    plan.ideas = {
-      ...plan.ideas,
-      themes: [input.preferences.theme.trim(), ...plan.ideas.themes.filter((t) => t !== input.preferences.theme.trim())].slice(0, 3),
+    const theme = input.preferences.theme.trim();
+    ideas = {
+      ...ideas,
+      themes: [theme, ...ideas.themes.filter((t) => t !== theme)].slice(0, 3),
     };
   }
   if (input.preferences.accessibility.trim()) {
-    plan.ideas = {
-      ...plan.ideas,
+    const note = input.preferences.accessibility.trim();
+    ideas = {
+      ...ideas,
       guestExperience: [
-        `Accessibility requirement in effect: ${input.preferences.accessibility.trim()} - confirm it with the venue`,
-        ...plan.ideas.guestExperience.filter((g) => !g.startsWith('Accessibility')),
+        `Accessibility requirement in effect: ${note} - confirm it with the venue`,
+        ...ideas.guestExperience.filter((g) => !g.startsWith('Accessibility')),
       ],
     };
   }
+  return ideas === plan.ideas ? plan : { ...plan, ideas };
 }
 
 export function makeChangeRecord(

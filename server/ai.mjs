@@ -9,6 +9,12 @@ const TASK_CATEGORIES = ['planning', 'venue', 'catering', 'decoration', 'photogr
 const VENDOR_CATEGORIES = ['venue', 'catering', 'photography', 'decoration', 'entertainment', 'transportation', 'accommodation', 'other'];
 const PRIORITIES = ['high', 'medium', 'low'];
 const EVENT_TYPES = ['wedding', 'birthday', 'anniversary', 'community', 'college', 'festival', 'corporate', 'custom'];
+const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'];
+const FLEXIBILITIES = ['strict', 'moderate', 'flexible'];
+const SETTINGS = ['indoor', 'outdoor', 'either'];
+const FOODS = ['vegetarian', 'vegan', 'non-vegetarian', 'mixed', 'unspecified'];
+const REQUIREMENT_KEYS = ['venue', 'catering', 'decoration', 'photography', 'entertainment', 'invitations', 'transportation', 'accommodation'];
+const MAX_MINOR = 100_000_000_000_00;
 
 export function getProviderConfig() {
   const apiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY || '';
@@ -296,38 +302,170 @@ If the request is ambiguous or high-consequence (date without a specific day, bu
 "summary" is one short sentence; "tradeoffs" lists 1-3 honest consequences.
 JSON shape: {"ops":[...],"summary":"","tradeoffs":[],"clarify":null}`;
 
+function boundedString(value, max, { required = false } = {}) {
+  if (typeof value !== 'string') return required ? null : '';
+  const text = value.trim();
+  if (required && !text) return null;
+  return text.slice(0, max);
+}
+
+function isIsoDay(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [y, m, d] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
+function boundedStringList(value, maxItems, maxLen) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim().slice(0, maxLen))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+/**
+ * Narrows the untrusted client payload to exactly the fields the model needs.
+ * This keeps prompts bounded even though the HTTP body itself may be larger.
+ */
+function sanitizePlanInput(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  if (!EVENT_TYPES.includes(raw.type)) return null;
+  const budget = raw.budget && typeof raw.budget === 'object' && !Array.isArray(raw.budget) ? raw.budget : null;
+  const preferences = raw.preferences && typeof raw.preferences === 'object' && !Array.isArray(raw.preferences) ? raw.preferences : null;
+  const requirements = raw.requirements && typeof raw.requirements === 'object' && !Array.isArray(raw.requirements) ? raw.requirements : {};
+
+  const name = boundedString(raw.name, 80);
+  const location = boundedString(raw.location, 120, { required: true });
+  if (location === null || !isIsoDay(raw.date)) return null;
+  if (!Number.isInteger(raw.guestCount) || raw.guestCount < 1 || raw.guestCount > 100_000) return null;
+  if (!SETTINGS.includes(raw.setting)) return null;
+  if (typeof raw.durationHours !== 'number' || !Number.isFinite(raw.durationHours) || raw.durationHours < 1 || raw.durationHours > 72) return null;
+  if (!budget) return null;
+  if (!Number.isSafeInteger(budget.totalMinor) || budget.totalMinor < 100 || budget.totalMinor > MAX_MINOR) return null;
+  if (!CURRENCIES.includes(budget.currency)) return null;
+  if (!FLEXIBILITIES.includes(budget.flexibility)) return null;
+  if (typeof budget.contingencyPct !== 'number' || !Number.isFinite(budget.contingencyPct) || budget.contingencyPct < 0 || budget.contingencyPct > 30) return null;
+
+  const priorities = {};
+  if (budget.priorities && typeof budget.priorities === 'object' && !Array.isArray(budget.priorities)) {
+    for (const [key, value] of Object.entries(budget.priorities)) {
+      if (CATEGORY_IDS.includes(key) && PRIORITIES.includes(value)) priorities[key] = value;
+    }
+  }
+
+  const safePreferences = {
+    theme: boundedString(preferences?.theme, 200),
+    colors: boundedStringList(preferences?.colors, 8, 40),
+    food: FOODS.includes(preferences?.food) ? preferences.food : 'unspecified',
+    cultural: boundedString(preferences?.cultural, 400),
+    accessibility: boundedString(preferences?.accessibility, 400),
+    special: boundedString(preferences?.special, 400),
+  };
+
+  const safeRequirements = {};
+  for (const key of REQUIREMENT_KEYS) safeRequirements[key] = requirements[key] === true;
+
+  return {
+    event: {
+      name,
+      type: raw.type,
+      date: raw.date,
+      location,
+      guestCount: raw.guestCount,
+      setting: raw.setting,
+      durationHours: Math.round(raw.durationHours),
+    },
+    budget: {
+      totalMinor: budget.totalMinor,
+      currency: budget.currency,
+      flexibility: budget.flexibility,
+      contingencyPct: budget.contingencyPct,
+      priorities,
+    },
+    preferences: safePreferences,
+    planningRequirements: safeRequirements,
+  };
+}
+
+function projectPlanForPrompt(raw) {
+  const plan = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  const input = plan.input && typeof plan.input === 'object' ? plan.input : {};
+  const budget = plan.budget && typeof plan.budget === 'object' ? plan.budget : {};
+  const timeline = plan.timeline && typeof plan.timeline === 'object' ? plan.timeline : {};
+  const categories = Array.isArray(budget.categories) ? budget.categories.slice(0, 20) : [];
+  const tasks = Array.isArray(timeline.tasks) ? timeline.tasks.slice(0, 100) : [];
+  const vendors = Array.isArray(plan.vendors) ? plan.vendors.slice(0, 100) : [];
+  const vendorRequirements = Array.isArray(plan.vendorRequirements) ? plan.vendorRequirements.slice(0, 30) : [];
+  const risks = Array.isArray(plan.risks) ? plan.risks.slice(0, 30) : [];
+  return {
+    input: {
+      name: boundedString(input.name, 80),
+      type: EVENT_TYPES.includes(input.type) ? input.type : 'custom',
+      date: isIsoDay(input.date) ? input.date : '',
+      location: boundedString(input.location, 120),
+      guestCount: Number.isInteger(input.guestCount) ? Math.max(0, Math.min(100_000, input.guestCount)) : 0,
+      setting: SETTINGS.includes(input.setting) ? input.setting : 'either',
+      durationHours: typeof input.durationHours === 'number' ? input.durationHours : 0,
+      budget: {
+        totalMinor: Number.isSafeInteger(input.budget?.totalMinor) ? input.budget.totalMinor : 0,
+        currency: CURRENCIES.includes(input.budget?.currency) ? input.budget.currency : 'INR',
+      },
+      preferences: {
+        theme: boundedString(input.preferences?.theme, 200),
+        food: FOODS.includes(input.preferences?.food) ? input.preferences.food : 'unspecified',
+        accessibility: boundedString(input.preferences?.accessibility, 400),
+      },
+    },
+    budget: {
+      categories: categories.map((c) => ({
+        id: boundedString(c?.id, 30),
+        allocatedMinor: Number.isSafeInteger(c?.allocatedMinor) ? c.allocatedMinor : 0,
+        estimatedMinor: Number.isSafeInteger(c?.estimatedMinor) ? c.estimatedMinor : 0,
+        priority: PRIORITIES.includes(c?.priority) ? c.priority : 'medium',
+        isContingency: c?.isContingency === true,
+      })),
+      insufficient: budget.insufficient === true,
+    },
+    tasks: tasks.map((t) => ({
+      id: boundedString(t?.id, 80),
+      title: boundedString(t?.title, 200),
+      dueDate: isIsoDay(t?.dueDate) ? t.dueDate : '',
+      status: ['todo', 'in-progress', 'done'].includes(t?.status) ? t.status : 'todo',
+      category: TASK_CATEGORIES.includes(t?.category) ? t.category : 'planning',
+    })),
+    vendorRequirements: vendorRequirements.map((v) => ({
+      category: VENDOR_CATEGORIES.includes(v?.category) ? v.category : 'other',
+      booked: v?.booked === true,
+    })),
+    vendors: vendors.map((v) => ({
+      id: boundedString(v?.id, 80),
+      name: boundedString(v?.name, 120),
+      category: VENDOR_CATEGORIES.includes(v?.category) ? v.category : 'other',
+      bookingStatus: typeof v?.bookingStatus === 'string' ? v.bookingStatus.slice(0, 30) : 'not-contacted',
+    })),
+    ideas: { themes: boundedStringList(plan.ideas?.themes, 8, 300) },
+    risks: risks.map((r) => ({ area: boundedString(r?.area, 60) })),
+    source: plan.source === 'ai' ? 'ai' : 'demo',
+  };
+}
+
 export async function handlePlan(body) {
   const { configured } = getProviderConfig();
   if (!configured) {
     return fail('NOT_CONFIGURED', 'The AI is not set up on this server, so we used our built-in rules instead.', 503);
   }
-  const input = body && body.input;
-  if (!input || typeof input !== 'object') {
-    return fail('BAD_REQUEST', 'We did not receive the event details.');
-  }
-  if (!EVENT_TYPES.includes(input.type)) {
-    return fail('BAD_REQUEST', 'We did not recognise that kind of event.');
+  const input = sanitizePlanInput(body && body.input);
+  if (!input) {
+    return fail('BAD_REQUEST', 'Some event details are missing or out of range. Please check the form and try again.');
   }
 
   const user = JSON.stringify({
-    event: {
-      name: input.name,
-      type: input.type,
-      date: input.date,
-      location: input.location,
-      guestCount: input.guestCount,
-      setting: input.setting,
-      durationHours: input.durationHours,
-    },
-    budget: {
-      totalMinor: input.budget?.totalMinor,
-      currency: input.budget?.currency,
-      flexibility: input.budget?.flexibility,
-      contingencyPct: input.budget?.contingencyPct,
-      priorities: input.budget?.priorities,
-    },
+    event: input.event,
+    budget: input.budget,
     preferences: input.preferences,
-    planningRequirements: input.requirements,
+    planningRequirements: input.planningRequirements,
     today: new Date().toISOString().slice(0, 10),
   });
 
@@ -363,16 +501,7 @@ export async function handleCopilot(body) {
     return fail('BAD_REQUEST', 'Please type what you would like to change.');
   }
 
-  const snapshot = {
-    input: plan.input,
-    budget: { categories: plan.budget?.categories, insufficient: plan.budget?.insufficient },
-    tasks: (plan.timeline?.tasks || []).map((t) => ({ id: t.id, title: t.title, dueDate: t.dueDate, status: t.status, category: t.category })),
-    vendorRequirements: (plan.vendorRequirements || []).map((v) => ({ category: v.category, booked: v.booked })),
-    vendors: (plan.vendors || []).map((v) => ({ id: v.id, name: v.name, category: v.category, bookingStatus: v.bookingStatus })),
-    ideas: { themes: plan.ideas?.themes },
-    risks: (plan.risks || []).map((r) => ({ area: r.area })),
-    source: plan.source,
-  };
+  const snapshot = projectPlanForPrompt(plan);
 
   try {
     const content = await callLLM(COPILOT_SYSTEM, `PLAN SNAPSHOT:\n${JSON.stringify(snapshot)}\n\nUSER REQUEST:\n${request.trim()}`);

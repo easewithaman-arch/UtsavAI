@@ -53,14 +53,13 @@ export function formatMoney(minor: number, currency: CurrencyCode): string {
     maximumFractionDigits: decimals,
   });
   const symbol = CURRENCY_SYMBOL[currency] ?? '';
-  if (currency === 'AED' || currency === 'SGD') return `${symbol}${formatted}`;
   return `${symbol}${formatted}`;
 }
 
 /** Parse user-entered major units ("1,50,000" / "150000.50") into minor units. */
 export function parseMoneyInput(raw: string, currency: CurrencyCode): number | null {
   const cleaned = raw.replace(/[^0-9.]/g, '');
-  if (!cleaned) return null;
+  if (!cleaned || !/[0-9]/.test(cleaned)) return null;
   const parts = cleaned.split('.');
   if (parts.length > 2) return null;
   const major = Number(parts[0] || '0');
@@ -72,11 +71,6 @@ export function parseMoneyInput(raw: string, currency: CurrencyCode): number | n
   const total = Math.round(major) * 100 + minorFrac;
   if (!Number.isSafeInteger(total)) return null;
   return total;
-}
-
-export function majorToMinor(major: number, currency: CurrencyCode): number {
-  const decimals = CURRENCY_DECIMALS[currency] ?? 2;
-  return Math.round(major * 10 ** decimals);
 }
 
 export function percentOf(part: number, whole: number): number {

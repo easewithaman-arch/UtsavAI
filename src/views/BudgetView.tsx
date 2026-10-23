@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react';
 import type { EventPlan } from '../domain/types';
 import { budgetTotals, budgetWarnings, costPerGuest } from '../domain/budget';
 import { CATEGORY_NAMES } from '../domain/events';
-import { money, percent, titleCase } from '../ui/format';
-import { Field, RiskList } from '../ui/atoms';
+import { money, titleCase } from '../ui/format';
+import { parseMoneyInput, percentOf } from '../domain/money';
+import { RiskList } from '../ui/atoms';
 
 export function BudgetView({
   plan,
@@ -32,18 +33,18 @@ export function BudgetView({
 
   const startEdit = (id: string, valueMinor: number) => {
     setEditId(id);
-    setDraft(String(Math.round(valueMinor / 100)));
+    setDraft((valueMinor / 100).toFixed(2));
     setError('');
   };
 
   const commitEdit = (id: string) => {
-    const parsed = Number(draft.replace(/[^0-9.]/g, ''));
-    if (!Number.isFinite(parsed) || parsed < 0) {
+    const parsed = parseMoneyInput(draft, currency);
+    if (parsed === null) {
       setError('Enter a non-negative amount.');
       return;
     }
     const next = plan.budget.categories.map((c) =>
-      c.id === id ? { ...c, allocatedMinor: Math.round(parsed * 100), manual: true } : c,
+      c.id === id ? { ...c, allocatedMinor: parsed, manual: true } : c,
     );
     const sum = next.reduce((s, c) => s + c.allocatedMinor, 0);
     if (sum > plan.input.budget.totalMinor) {
@@ -57,17 +58,20 @@ export function BudgetView({
     onAllocations(next);
   };
 
-  const setActual = (id: string, raw: string) => {
-    const parsed = Number(raw.replace(/[^0-9.]/g, ''));
-    if (!Number.isFinite(parsed) || parsed < 0) return;
-    const next = plan.budget.categories.map((c) =>
-      c.id === id ? { ...c, actualMinor: Math.round(parsed * 100) } : c,
-    );
+  const setActual = (id: string, raw: string, input: HTMLInputElement) => {
+    const parsed = parseMoneyInput(raw, currency);
+    if (parsed === null) {
+      const previous = plan.budget.categories.find((c) => c.id === id)?.actualMinor ?? 0;
+      input.value = (previous / 100).toFixed(2);
+      return;
+    }
+    const next = plan.budget.categories.map((c) => (c.id === id ? { ...c, actualMinor: parsed } : c));
     onActuals(next);
   };
 
   return (
     <div className="budget-view">
+      <h2 className="sr-only">Budget</h2>
       <div className="stat-row">
         <Stat label="Total budget" value={money(plan.input.budget.totalMinor, currency)} />
         <Stat label="Allocated" value={money(totals.allocatedMinor, currency)} tone={totals.overAllocated ? 'bad' : 'ok'} />
@@ -97,14 +101,15 @@ export function BudgetView({
 
       <div className="table-wrap">
         <table className="data-table">
+          <caption className="sr-only">Budget by category, with allocated, estimated, actual and priority</caption>
           <thead>
             <tr>
-              <th>Category</th>
-              <th>Allocated</th>
-              <th>Estimated need</th>
-              <th>Actual</th>
-              <th>Priority</th>
-              <th aria-label="Edit" />
+              <th scope="col">Category</th>
+              <th scope="col">Allocated</th>
+              <th scope="col">Estimated need</th>
+              <th scope="col">Actual</th>
+              <th scope="col">Priority</th>
+              <th scope="col" className="pct-cell">Share</th>
             </tr>
           </thead>
           <tbody>
@@ -125,6 +130,8 @@ export function BudgetView({
                       className="inline-input"
                       value={draft}
                       autoFocus
+                      inputMode="decimal"
+                      aria-label={`Allocated amount for ${CATEGORY_NAMES[c.id]}`}
                       onChange={(e) => setDraft(e.target.value)}
                       onBlur={() => commitEdit(c.id)}
                       onKeyDown={(e) => {
@@ -142,15 +149,16 @@ export function BudgetView({
                 <td>
                   <input
                     className="inline-input small"
-                    defaultValue={(c.actualMinor / 100).toString()}
-                    onBlur={(e) => setActual(c.id, e.target.value)}
+                    defaultValue={(c.actualMinor / 100).toFixed(2)}
+                    inputMode="decimal"
+                    onBlur={(e) => setActual(c.id, e.target.value, e.target)}
                     aria-label={`Actual spend for ${CATEGORY_NAMES[c.id]}`}
                   />
                 </td>
                 <td>
                   <span className={`pill ${c.priority}`}>{titleCase(c.priority)}</span>
                 </td>
-                <td className="pct-cell">{percent(c.allocatedMinor, plan.input.budget.totalMinor)}%</td>
+                <td className="pct-cell">{Math.round(percentOf(c.allocatedMinor, plan.input.budget.totalMinor))}%</td>
               </tr>
             ))}
           </tbody>
@@ -174,13 +182,14 @@ export function BudgetView({
         ) : null}
       </div>
 
-      <Field label="How to read these numbers">
+      <section className="numbers-note" aria-labelledby="budget-numbers-heading">
+        <h3 id="budget-numbers-heading">How to read these numbers</h3>
         <p className="muted">
           Allocated is what the plan sets aside; estimated need is a planning figure worked out from your guests, location
           and preferences; actual is what you have really spent. Every amount is shown to the paisa, so the categories
           always add up to your total exactly.
         </p>
-      </Field>
+      </section>
     </div>
   );
 }

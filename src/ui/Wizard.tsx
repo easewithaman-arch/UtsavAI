@@ -29,6 +29,10 @@ const PRIORITIES: Priority[] = ['high', 'medium', 'low'];
 const PRIORITY_CATEGORIES = (Object.keys(CATEGORY_NAMES) as (keyof typeof CATEGORY_NAMES)[]).filter(
   (id) => id !== 'contingency',
 );
+const FIELD_ERROR_KEYS = new Set([
+  'name', 'date', 'location', 'guestCount', 'durationHours', 'setting',
+  'budget.totalMinor', 'budget.contingencyPct', 'budget.currency', 'budget.flexibility',
+]);
 
 export interface WizardProps {
   onGenerate: (input: EventInput) => void;
@@ -38,8 +42,9 @@ export interface WizardProps {
 export function Wizard({ onGenerate, busy }: WizardProps) {
   const [tab, setTab] = useState<'sample' | 'custom'>('sample');
   const [input, setInput] = useState<EventInput>(() => emptyEventInput('wedding'));
-  const [imperialBudget, setImperialBudget] = useState('300000');
+  const [budgetDraft, setBudgetDraft] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const remainingErrors = Object.entries(errors).filter(([key]) => !FIELD_ERROR_KEYS.has(key));
 
   const update = (patch: Partial<EventInput>) => setInput((prev) => ({ ...prev, ...patch }));
   const updateBudget = (patch: Partial<EventInput['budget']>) =>
@@ -62,11 +67,18 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
     onGenerate(result.data);
   };
 
+  const reset = () => {
+    setInput(emptyEventInput(input.type));
+    setBudgetDraft('');
+    setErrors({});
+  };
+
   return (
     <section className="wizard">
       <div className="wizard-intro">
         <p className="eyebrow">Plan a celebration</p>
         <h1>Everything a real event needs, decided honestly.</h1>
+      <h2 className="sr-only">Plan your event</h2>
         <p className="lede">
           Budget, timeline, vendor checklist and a planning assistant that gives you real numbers. Start from a worked
           example or build your own event from scratch.
@@ -74,6 +86,7 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
       </div>
 
       <Segmented
+        label="How to start"
         options={[
           { value: 'sample', label: 'Worked examples' },
           { value: 'custom', label: 'Build my own' },
@@ -106,32 +119,35 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
           />
 
           <div className="form-grid">
-            <Field label="Event name">
+            <Field label="Event name" error={errors.name}>
               <input
                 value={input.name}
+                maxLength={80}
                 placeholder="e.g. Aarav's 10th birthday"
                 onChange={(e) => update({ name: e.target.value })}
               />
             </Field>
-            <Field label="Date">
+            <Field label="Date" error={errors.date}>
               <input type="date" value={input.date} onChange={(e) => update({ date: e.target.value })} />
             </Field>
-            <Field label="Location / city" hint="Bigger cities usually cost more.">
+            <Field label="Location / city" hint="Bigger cities usually cost more." error={errors.location}>
               <input
                 value={input.location}
+                maxLength={120}
                 placeholder="e.g. Pune"
                 onChange={(e) => update({ location: e.target.value })}
               />
             </Field>
-            <Field label="Guests">
+            <Field label="Guests" error={errors.guestCount}>
               <input
                 type="number"
                 min={1}
+                max={100000}
                 value={input.guestCount}
                 onChange={(e) => update({ guestCount: Number(e.target.value) })}
               />
             </Field>
-            <Field label="Duration (hours)">
+            <Field label="Duration (hours)" error={errors.durationHours}>
               <input
                 type="number"
                 min={1}
@@ -140,7 +156,7 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
                 onChange={(e) => update({ durationHours: Number(e.target.value) })}
               />
             </Field>
-            <Field label="Setting">
+            <Field label="Setting" error={errors.setting}>
               <select value={input.setting} onChange={(e) => update({ setting: e.target.value as Setting })}>
                 <option value="indoor">Indoor</option>
                 <option value="outdoor">Outdoor</option>
@@ -149,12 +165,10 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
             </Field>
           </div>
 
-          {errors.name ? <p className="field-error">{errors.name}</p> : null}
-
           <div className="section-block">
             <h3>Budget</h3>
             <div className="form-grid">
-              <Field label="Currency">
+              <Field label="Currency" error={errors['budget.currency']}>
                 <select
                   value={input.budget.currency}
                   onChange={(e) => updateBudget({ currency: e.target.value as CurrencyCode })}
@@ -166,28 +180,28 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
                   ))}
                 </select>
               </Field>
-              <Field label="Total budget" hint="Round numbers are fine - no decimals needed.">
+              <Field label="Total budget" hint="Round numbers are fine - no decimals needed." error={errors['budget.totalMinor']}>
                 <input
-                  value={imperialBudget}
-                  inputMode="numeric"
+                  value={budgetDraft}
+                  inputMode="decimal"
                   onChange={(e) => {
                     const raw = e.target.value;
-                    setImperialBudget(raw);
+                    setBudgetDraft(raw);
                     const minor = parseMoneyInput(raw, input.budget.currency);
                     updateBudget({ totalMinor: minor ?? 0 });
                   }}
                 />
               </Field>
-              <Field label="Reserve %" hint="Money kept aside for surprises.">
+              <Field label="Reserve %" hint="Money kept aside for surprises." error={errors['budget.contingencyPct']}>
                 <input
                   type="number"
                   min={0}
-                  max={40}
+                  max={30}
                   value={input.budget.contingencyPct}
                   onChange={(e) => updateBudget({ contingencyPct: Number(e.target.value) })}
                 />
               </Field>
-              <Field label="Flexibility">
+              <Field label="Flexibility" error={errors['budget.flexibility']}>
                 <select
                   value={input.budget.flexibility}
                   onChange={(e) => updateBudget({ flexibility: e.target.value as EventInput['budget']['flexibility'] })}
@@ -198,7 +212,6 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
                 </select>
               </Field>
             </div>
-            {errors.budget ? <p className="field-error">{errors.budget}</p> : null}
 
             <details className="advanced">
               <summary>Category priorities</summary>
@@ -291,10 +304,18 @@ export function Wizard({ onGenerate, busy }: WizardProps) {
             </div>
           </div>
 
-          {errors.form ? <p className="field-error">{errors.form}</p> : null}
+          {remainingErrors.length > 0 ? (
+            <div className="field-error" role="alert">
+              <ul className="plain-list small">
+                {remainingErrors.map(([key, message]) => (
+                  <li key={key}>{message}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div className="wizard-actions">
-            <button type="button" className="ghost" onClick={() => setInput(emptyEventInput(input.type))}>
+            <button type="button" className="ghost" onClick={reset}>
               Reset
             </button>
             <button type="button" className="primary" disabled={busy} onClick={submit}>
@@ -316,11 +337,8 @@ function SampleCard({
   busy: boolean;
   onGenerate: (input: EventInput) => void;
 }) {
-  const build = () => {
-    const input = scenario.build();
-    onGenerate({ ...input, id: newId('evt') });
-  };
-  const preview = scenario.build();
+  const preview = useMemo(() => scenario.build(), [scenario]);
+  const build = () => onGenerate({ ...preview, id: newId('evt') });
   return (
     <article className="sample-card">
       <p className="sample-title">{scenario.title}</p>

@@ -1487,3 +1487,68 @@ textarea {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Accessibility and layout polish */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--plum-soft);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.brand {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+
+.brand:hover .brand-wordmark {
+  color: var(--plum);
+}
+
+.plan-title {
+  font-size: 1.5rem;
+}
+
+.save-state {
+  align-self: center;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.field .field-error {
+  display: block;
+}
+
+.numbers-note {
+  margin: 12px 0 18px;
+}
+
+.numbers-note h3 {
+  margin-bottom: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

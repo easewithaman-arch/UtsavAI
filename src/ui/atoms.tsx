@@ -25,19 +25,20 @@ export function Segmented<T extends string>({
   options,
   value,
   onChange,
+  label,
 }: {
   options: SegmentedOption<T>[];
   value: T;
   onChange: (next: T) => void;
+  label: string;
 }) {
   return (
-    <div className="segmented" role="tablist">
+    <div className="segmented" role="group" aria-label={label}>
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
-          role="tab"
-          aria-selected={o.value === value}
+          aria-pressed={o.value === value}
           className={o.value === value ? 'active' : ''}
           onClick={() => onChange(o.value)}
         >
@@ -75,13 +76,14 @@ export function ChipPicker({
   onPick: (key: string) => void;
 }) {
   return (
-    <div className="chip-picker">
+    <div className="chip-picker" role="group" aria-label={title}>
       <span className="chip-label">{title}</span>
       <div className="chips">
         {options.map((o) => (
           <button
             key={o.key}
             type="button"
+            aria-pressed={o.key === value}
             className={o.key === value ? 'chip selected' : 'chip'}
             onClick={() => onPick(o.key)}
           >
@@ -94,12 +96,23 @@ export function ChipPicker({
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+export function Field({
+  label,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <label className="field">
+    <label className={`field ${error ? 'has-error' : ''}`}>
       <span className="field-label">{label}</span>
       {children}
-      {hint ? <span className="field-hint">{hint}</span> : null}
+      {hint && !error ? <span className="field-hint">{hint}</span> : null}
+      {error ? <span className="field-error" role="alert">{error}</span> : null}
     </label>
   );
 }

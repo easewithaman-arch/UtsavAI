@@ -12,6 +12,7 @@ const IDEA_LABELS: { key: keyof EventPlan['ideas']; title: string; blurb: string
 export function IdeasView({ plan }: { plan: EventPlan }) {
   return (
     <div className="ideas-view">
+      <h2 className="sr-only">Overview</h2>
       <section className="panel overview-panel">
         <h3>Concept</h3>
         <p className="concept">{plan.overview.concept}</p>

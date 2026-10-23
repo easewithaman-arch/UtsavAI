@@ -81,17 +81,26 @@ export function TimelineView({
 
   return (
     <div className="timeline-view">
+      <h2 className="sr-only">Timeline</h2>
       <div className="timeline-head">
         <div className="progress-block">
-          <span className="progress-label">
+          <span className="progress-label" id="timeline-progress-label">
             {progress.done} of {progress.total} tasks done
           </span>
-          <div className="progress-bar">
+          <div
+            className="progress-bar"
+            role="progressbar"
+            aria-labelledby="timeline-progress-label"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(progress.pct)}
+          >
             <span style={{ width: `${progress.pct}%` }} />
           </div>
         </div>
         <div className="timeline-actions">
           <Segmented
+            label="Filter tasks"
             options={[
               { value: 'all', label: 'All' },
               { value: 'overdue', label: `Overdue (${overdue.length})` },
@@ -110,7 +119,7 @@ export function TimelineView({
       <div className="milestones">
         {plan.timeline.milestones.map((m) => (
           <div key={m.id} className={`milestone ${m.date === plan.input.date ? 'final' : ''}`}>
-            <span className="milestone-dot" />
+            <span className="milestone-dot" aria-hidden="true" />
             <span className="milestone-label">{m.label}</span>
             <span className="milestone-date">{formatDate(m.date)}</span>
           </div>
@@ -134,23 +143,27 @@ export function TimelineView({
                   type="button"
                   className={`status-dot ${task.status}`}
                   onClick={() => toggleStatus(task)}
-                  aria-label={`Cycle status for ${task.title}`}
-                  title="Click to change status"
+                  aria-label={`Status: ${titleCase(task.status)} for ${task.title}. Change status`}
+                  title={`Currently ${titleCase(task.status)} - click to change`}
                 />
                 {isEditing ? (
                   <div className="task-edit">
                     <input
                       value={draft.title ?? ''}
+                      maxLength={200}
+                      aria-label={`Task title for ${task.title}`}
                       onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
                       placeholder="Task title"
                     />
                     <input
                       type="date"
                       value={draft.dueDate ?? ''}
+                      aria-label={`Due date for ${task.title}`}
                       onChange={(e) => setDraft((d) => ({ ...d, dueDate: e.target.value }))}
                     />
                     <select
                       value={draft.priority ?? 'medium'}
+                      aria-label={`Priority for ${task.title}`}
                       onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value as Priority }))}
                     >
                       <option value="high">High</option>
@@ -182,14 +195,14 @@ export function TimelineView({
                   </div>
                 )}
                 <div className="task-tools">
-                  <button type="button" className="icon-btn" onClick={() => beginEdit(task)} aria-label="Edit task">
+                  <button type="button" className="icon-btn" onClick={() => beginEdit(task)} aria-label={`Edit task ${task.title}`}>
                     Edit
                   </button>
                   <button
                     type="button"
                     className="icon-btn danger"
                     onClick={() => apply(deleteTask(plan.timeline.tasks, task.id))}
-                    aria-label="Delete task"
+                    aria-label={`Delete task ${task.title}`}
                   >
                     Delete
                   </button>

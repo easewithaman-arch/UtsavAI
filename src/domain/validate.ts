@@ -9,6 +9,17 @@ export interface ValidationResult<T> {
 
 const EVENT_TYPE_IDS = new Set(EVENT_TYPES.map((t) => t.id));
 const CURRENCIES = new Set<CurrencyCode>(['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD']);
+const CATEGORY_IDS = new Set(Object.keys(CATEGORY_NAMES));
+const PRIORITIES = new Set(['high', 'medium', 'low']);
+const TASK_CATEGORIES = new Set([
+  'planning', 'venue', 'catering', 'decoration', 'photography', 'entertainment',
+  'invitations', 'guests', 'logistics', 'finance',
+]);
+const TASK_STATUSES = new Set(['todo', 'in-progress', 'done']);
+const FOODS = new Set(['vegetarian', 'vegan', 'non-vegetarian', 'mixed', 'unspecified']);
+const REQUIREMENT_KEYS: (keyof EventInput['requirements'])[] = [
+  'venue', 'catering', 'decoration', 'photography', 'entertainment', 'invitations', 'transportation', 'accommodation',
+];
 
 export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -97,14 +108,28 @@ export function validateEventInput(raw: unknown): ValidationResult<EventInput> {
 
   const prefs = asRecord(obj.preferences);
   if (prefs) {
-    if (typeof prefs.theme !== 'string') errors['preferences.theme'] = 'Theme must be text.';
-    if (typeof prefs.food !== 'string') errors['preferences.food'] = 'Choose a food preference.';
+    if (typeof prefs.theme !== 'string' || prefs.theme.length > 200) errors['preferences.theme'] = 'Theme must be short text.';
+    if (!FOODS.has(prefs.food as string)) errors['preferences.food'] = 'Choose a food preference.';
+    if (prefs.colors !== undefined && (!Array.isArray(prefs.colors) || prefs.colors.length > 8 || prefs.colors.some((c) => typeof c !== 'string' || c.length > 40))) {
+      errors['preferences.colors'] = 'Use up to 8 short colour names.';
+    }
+    for (const key of ['cultural', 'accessibility', 'special'] as const) {
+      if (prefs[key] !== undefined && (typeof prefs[key] !== 'string' || prefs[key].length > 400)) {
+        errors[`preferences.${key}`] = 'Keep this note under 400 characters.';
+      }
+    }
   } else {
     errors.preferences = 'Preferences are required.';
   }
 
   const reqs = asRecord(obj.requirements);
-  if (!reqs) errors.requirements = 'Planning requirements are required.';
+  if (!reqs) {
+    errors.requirements = 'Planning requirements are required.';
+  } else {
+    for (const key of REQUIREMENT_KEYS) {
+      if (typeof reqs[key] !== 'boolean') errors[`requirements.${key}`] = 'Planning requirements must be yes or no.';
+    }
+  }
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
@@ -140,6 +165,10 @@ function isMinor(v: unknown): v is number {
   return typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 }
 
+function isStringList(value: unknown, maxItems: number, maxLen: number): value is string[] {
+  return Array.isArray(value) && value.length <= maxItems && value.every((item) => typeof item === 'string' && item.length <= maxLen);
+}
+
 /** Validates plan sections coming from an untrusted source (AI response, storage). */
 export function validatePlanShape(raw: unknown): { ok: boolean; errors: string[] } {
   const errors: string[] = [];
@@ -150,34 +179,80 @@ export function validatePlanShape(raw: unknown): { ok: boolean; errors: string[]
   if (!input.ok) errors.push('Plan event input is invalid.');
 
   const overview = asRecord(plan.overview);
-  if (!overview || !isStr(overview.concept, 2000)) errors.push('Overview is malformed.');
+  if (
+    !overview ||
+    !isStr(overview.concept, 2000) ||
+    !isStr(overview.theme, 200) ||
+    !isStringList(overview.objectives, 20, 600) ||
+    !isStringList(overview.assumptions, 20, 600)
+  ) {
+    errors.push('Overview is malformed.');
+  }
 
   const budget = asRecord(plan.budget);
   if (!budget || !Array.isArray(budget.categories) || budget.categories.length === 0) {
     errors.push('Budget section is malformed.');
   } else {
+    const ids = new Set<string>();
     for (const c of budget.categories) {
       const cat = asRecord(c);
-      if (!cat || typeof cat.id !== 'string' || !(cat.id in CATEGORY_NAMES)) {
+      if (!cat || typeof cat.id !== 'string' || !CATEGORY_IDS.has(cat.id)) {
         errors.push('Budget contains an unknown category.');
+        break;
+      }
+      if (ids.has(cat.id)) {
+        errors.push('Budget contains duplicate categories.');
+        break;
+      }
+      ids.add(cat.id);
+      if ((cat.id === 'contingency') !== (cat.isContingency === true)) {
+        errors.push('Budget reserve flag does not match its category.');
         break;
       }
       if (!isMinor(cat.allocatedMinor) || !isMinor(cat.estimatedMinor) || !isMinor(cat.actualMinor)) {
         errors.push('Budget contains invalid amounts.');
         break;
       }
+      if (!PRIORITIES.has(cat.priority as string) || typeof cat.manual !== 'boolean') {
+        errors.push('Budget contains an invalid category.');
+        break;
+      }
+    }
+    if (!isStringList(budget.risks, 20, 800) || !isStringList(budget.savings, 20, 800) || typeof budget.insufficient !== 'boolean') {
+      errors.push('Budget notes are malformed.');
     }
   }
 
   const timeline = asRecord(plan.timeline);
-  if (!timeline || !Array.isArray(timeline.tasks)) {
+  if (!timeline || !Array.isArray(timeline.tasks) || !Array.isArray(timeline.milestones)) {
     errors.push('Timeline section is malformed.');
   } else {
     const ids = new Set<string>();
+    const allIds = new Set<string>();
+    for (const t of timeline.tasks) {
+      const record = asRecord(t);
+      if (record && isStr(record.id, 80)) allIds.add(record.id);
+    }
     for (const t of timeline.tasks) {
       const task = asRecord(t) as unknown as PlanTask | null;
-      if (!task || !isStr(task.id, 80) || !isStr(task.title, 200) || !isValidIsoDate(task.dueDate)) {
+      if (
+        !task ||
+        !isStr(task.id, 80) ||
+        !task.id.trim() ||
+        !isStr(task.title, 200) ||
+        !task.title.trim() ||
+        !isStr(task.description, 1000) ||
+        !TASK_CATEGORIES.has(task.category) ||
+        !TASK_STATUSES.has(task.status) ||
+        !PRIORITIES.has(task.priority) ||
+        !Number.isInteger(task.leadDays) ||
+        !isValidIsoDate(task.dueDate)
+      ) {
         errors.push('Timeline contains an invalid task.');
+        break;
+      }
+      if (task.estimatedCostMinor !== undefined && !isMinor(task.estimatedCostMinor)) {
+        errors.push('Timeline contains an invalid task cost.');
         break;
       }
       if (ids.has(task.id)) {
@@ -185,28 +260,135 @@ export function validatePlanShape(raw: unknown): { ok: boolean; errors: string[]
         break;
       }
       ids.add(task.id);
-      if (task.dependsOn && !ids.has(task.dependsOn) && !timeline.tasks.some((x: unknown) => (asRecord(x)?.id as string) === task.dependsOn)) {
+      if (task.dependsOn && !allIds.has(task.dependsOn)) {
         errors.push(`Task "${task.title}" references an unknown dependency.`);
         break;
       }
-    }
-  }
-
-  if (!Array.isArray(plan.vendorRequirements)) errors.push('Vendor requirements are malformed.');
-  if (!Array.isArray(plan.vendors)) errors.push('Vendors are malformed.');
-  else {
-    for (const v of plan.vendors) {
-      if (!isStr(asRecord(v)?.name, 120)) {
-        errors.push('A vendor record is malformed.');
+      if (task.dependsOn && task.dependsOn === task.id) {
+        errors.push(`Task "${task.title}" cannot depend on itself.`);
         break;
       }
     }
+
+    const milestoneIds = new Set<string>();
+    for (const m of timeline.milestones) {
+      const milestone = asRecord(m);
+      if (!milestone || !isStr(milestone.id, 80) || !isStr(milestone.label, 160) || !isValidIsoDate(milestone.date)) {
+        errors.push('Timeline contains an invalid milestone.');
+        break;
+      }
+      if (milestoneIds.has(milestone.id)) {
+        errors.push('Timeline contains duplicate milestone ids.');
+        break;
+      }
+      milestoneIds.add(milestone.id);
+    }
   }
+
+  if (!Array.isArray(plan.vendorRequirements)) {
+    errors.push('Vendor requirements are malformed.');
+  } else {
+    const ids = new Set<string>();
+    for (const item of plan.vendorRequirements) {
+      const v = asRecord(item);
+      if (
+        !v ||
+        !isStr(v.id, 80) ||
+        !VENDOR_CATEGORIES.has(v.category as string) ||
+        !isStringList(v.services, 12, 400) ||
+        !isStringList(v.questions, 12, 400) ||
+        !isStringList(v.comparisonCriteria, 12, 400) ||
+        !PRIORITIES.has(v.bookingPriority as string) ||
+        !isMinor(v.budgetGuideMinor) ||
+        typeof v.booked !== 'boolean'
+      ) {
+        errors.push('A vendor requirement is malformed.');
+        break;
+      }
+      if (ids.has(v.id)) {
+        errors.push('Vendor requirements contain duplicate ids.');
+        break;
+      }
+      ids.add(v.id);
+    }
+  }
+
+  if (!Array.isArray(plan.vendors)) {
+    errors.push('Vendors are malformed.');
+  } else {
+    const ids = new Set<string>();
+    for (const item of plan.vendors) {
+      const v = asRecord(item);
+      if (
+        !v ||
+        !isStr(v.id, 80) ||
+        !isStr(v.name, 120) ||
+        !String(v.name).trim() ||
+        !VENDOR_CATEGORIES.has(v.category as string) ||
+        !VENDOR_BOOKING.has(v.bookingStatus as string) ||
+        !VENDOR_PAYMENT.has(v.paymentStatus as string) ||
+        !isStr(v.contact, 300) ||
+        !isStr(v.notes, 2000) ||
+        (v.quotedPriceMinor !== undefined && !isMinor(v.quotedPriceMinor)) ||
+        (v.followUpDate !== undefined && !isValidIsoDate(v.followUpDate)) ||
+        (v.source !== 'user' && v.source !== 'ai-suggestion')
+      ) {
+        errors.push('A vendor record is malformed.');
+        break;
+      }
+      if (ids.has(v.id)) {
+        errors.push('Vendors contain duplicate ids.');
+        break;
+      }
+      ids.add(v.id);
+    }
+  }
+
   const ideas = asRecord(plan.ideas);
-  if (!ideas || !Array.isArray(ideas.themes)) errors.push('Ideas section is malformed.');
-  if (!Array.isArray(plan.risks)) errors.push('Risks section is malformed.');
+  if (
+    !ideas ||
+    !isStringList(ideas.themes, 20, 600) ||
+    !isStringList(ideas.decoration, 20, 600) ||
+    !isStringList(ideas.catering, 20, 600) ||
+    !isStringList(ideas.entertainment, 20, 600) ||
+    !isStringList(ideas.guestExperience, 20, 600)
+  ) {
+    errors.push('Ideas section is malformed.');
+  }
+
+  if (!Array.isArray(plan.risks)) {
+    errors.push('Risks section is malformed.');
+  } else {
+    const ids = new Set<string>();
+    for (const item of plan.risks) {
+      const risk = asRecord(item);
+      if (
+        !risk ||
+        !isStr(risk.id, 80) ||
+        !isStr(risk.area, 120) ||
+        !isStr(risk.description, 1200) ||
+        !isStr(risk.mitigation, 1200)
+      ) {
+        errors.push('A risk item is malformed.');
+        break;
+      }
+      if (ids.has(risk.id)) {
+        errors.push('Risks contain duplicate ids.');
+        break;
+      }
+      ids.add(risk.id);
+    }
+  }
+
   const actions = asRecord(plan.actions);
-  if (!actions || !Array.isArray(actions.immediate)) errors.push('Actions section is malformed.');
+  if (
+    !actions ||
+    !isStringList(actions.immediate, 20, 600) ||
+    !isStringList(actions.upcoming, 20, 600) ||
+    !isStringList(actions.decisions, 20, 600)
+  ) {
+    errors.push('Actions section is malformed.');
+  }
   if (plan.source !== 'demo' && plan.source !== 'ai') errors.push('Plan source must be "demo" or "ai".');
 
   return { ok: errors.length === 0, errors };
@@ -219,11 +401,16 @@ const VENDOR_PAYMENT = new Set(['none', 'advance-paid', 'partial', 'paid']);
 export function sanitizeVendors(raw: unknown): Vendor[] {
   if (!Array.isArray(raw)) return [];
   const out: Vendor[] = [];
+  const ids = new Set<string>();
   for (const item of raw) {
     const v = asRecord(item);
     if (!v || !isStr(v.name, 120) || !v.name.trim()) continue;
+    let id = isStr(v.id, 80) && v.id.trim() ? v.id : `vnd_${out.length}`;
+    let suffix = 0;
+    while (ids.has(id)) id = `vnd_${out.length}_${++suffix}`;
+    ids.add(id);
     out.push({
-      id: isStr(v.id, 80) ? v.id : `vnd_${out.length}`,
+      id,
       name: v.name.trim(),
       category: isStr(v.category, 30) && VENDOR_CATEGORIES.has(v.category) ? (v.category as Vendor['category']) : 'other',
       contact: isStr(v.contact, 300) ? v.contact : '',
@@ -245,10 +432,13 @@ export function sanitizeVendors(raw: unknown): Vendor[] {
 export function sanitizeBudgetCategories(raw: unknown): BudgetCategory[] | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
   const out: BudgetCategory[] = [];
+  const ids = new Set<string>();
   for (const item of raw) {
     const c = asRecord(item);
-    if (!c || typeof c.id !== 'string' || !(c.id in CATEGORY_NAMES)) return null;
+    if (!c || typeof c.id !== 'string' || !CATEGORY_IDS.has(c.id)) return null;
+    if (ids.has(c.id)) return null;
     if (!isMinor(c.allocatedMinor) || !isMinor(c.estimatedMinor) || !isMinor(c.actualMinor)) return null;
+    ids.add(c.id);
     out.push({
       id: c.id as BudgetCategory['id'],
       name: CATEGORY_NAMES[c.id as BudgetCategory['id']],
@@ -256,7 +446,7 @@ export function sanitizeBudgetCategories(raw: unknown): BudgetCategory[] | null 
       estimatedMinor: c.estimatedMinor,
       actualMinor: c.actualMinor,
       priority: (c.priority === 'high' || c.priority === 'low' ? c.priority : 'medium') as BudgetCategory['priority'],
-      isContingency: Boolean(c.isContingency),
+      isContingency: c.id === 'contingency',
       manual: Boolean(c.manual),
     });
   }

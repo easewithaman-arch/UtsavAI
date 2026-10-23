@@ -102,6 +102,7 @@ export function CopilotView({
 
   return (
     <div className="copilot-view">
+      <h2 className="sr-only">Assistant</h2>
       <section className="panel copilot-panel">
         <header className="copilot-head">
           <h3>Planning assistant</h3>
@@ -124,8 +125,14 @@ export function CopilotView({
         </div>
 
         <div className="ask-row">
+          <label className="sr-only" htmlFor="copilot-request">
+            Describe the change you want
+          </label>
           <textarea
+            id="copilot-request"
             value={request}
+            maxLength={2000}
+            aria-describedby={error ? 'copilot-error' : undefined}
             onChange={(e) => setRequest(e.target.value)}
             placeholder='e.g. "Reduce the budget by 20% and add vegetarian catering"'
             rows={2}
@@ -133,14 +140,14 @@ export function CopilotView({
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) ask();
             }}
           />
-          <button type="button" className="primary" onClick={ask} disabled={busy || !request.trim()}>
+          <button type="button" className="primary" onClick={ask} disabled={busy || !request.trim()} aria-busy={busy}>
             {busy ? 'Thinking...' : 'Ask'}
           </button>
         </div>
-        {error ? <p className="field-error">{error}</p> : null}
+        {error ? <p className="field-error" id="copilot-error" role="alert">{error}</p> : null}
 
         {pending ? (
-          <div className="proposal">
+          <div className="proposal" role="status">
             <div className="proposal-head">
               <span className={`tag ${pending.origin}`}>{pending.origin === 'ai' ? 'AI suggestion' : 'Built-in suggestion'}</span>
               <p className="proposal-summary">{pending.summary}</p>
@@ -177,7 +184,7 @@ export function CopilotView({
         ) : null}
 
         {lastChanges.length > 0 ? (
-          <div className="applied">
+          <div className="applied" role="status">
             <h4>Applied</h4>
             <ul className="plain-list">
               {lastChanges.map((c, i) => (
